@@ -1,9 +1,11 @@
-"""Command line interface: ``wbmon init-db``, ``wbmon collect`` and ``wbmon probe``.
+"""Command line interface: ``init-db``, ``collect``, ``probe``, ``scheduler`` and ``healthcheck``.
 
 Exit codes: 0 success (``collect`` also exits 0 when every query was blocked, when another run
 holds the lock, and when the requested slot already has a run), 2 usage/config error, 1 crash.
+``healthcheck`` is the exception: it only ever exits 0 (healthy) or 1 (anything else), because
+Docker reserves healthcheck exit code 2.
 
-``collect`` is the entry point Phase 2's scheduler calls:
+``collect`` is the entry point the scheduler calls:
 ``python -m wbmon collect --trigger scheduler --slot <ISO-8601 time>``.
 """
 
@@ -13,6 +15,7 @@ import argparse
 import contextlib
 import json
 import logging
+import math
 import sqlite3
 import sys
 import time
@@ -23,6 +26,7 @@ from pathlib import Path
 from wbmon.classify import classify_page
 from wbmon.clock import parse_slot
 from wbmon.config import ConfigError, Settings
+from wbmon.health import DEFAULT_MAX_AGE_S, run_healthcheck
 from wbmon.log import configure_logging, log_event
 from wbmon.normalize import extract_normquery, payload_shape
 from wbmon.orchestrator import run_once
@@ -41,6 +45,17 @@ def _positive_int(text: str) -> int:
         raise argparse.ArgumentTypeError(f"not an integer: {text!r}") from None
     if value < 1:
         raise argparse.ArgumentTypeError(f"must be at least 1, got {value}")
+    return value
+
+
+def _positive_float(text: str) -> float:
+    """argparse type: a finite number greater than 0."""
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a number: {text!r}") from None
+    if not math.isfinite(value) or value <= 0:
+        raise argparse.ArgumentTypeError(f"must be a finite number above 0, got {text!r}")
     return value
 
 
@@ -92,6 +107,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     probe.add_argument(
         "--query", type=_non_blank, help="query text (default: the first bundled query)"
+    )
+    health = sub.add_parser(
+        "healthcheck",
+        help="exit 0 if the scheduler heartbeat is fresh, 1 otherwise (never 2)",
+    )
+    health.add_argument("--db", help="database path (default: WBMON_DB_PATH)")
+    health.add_argument(
+        "--max-age",
+        type=_positive_float,
+        default=DEFAULT_MAX_AGE_S,
+        metavar="SECONDS",
+        help="maximum heartbeat age in seconds (default 180)",
     )
     return parser
 
@@ -150,6 +177,30 @@ def _log_run_summary(db_path: Path, run_id: int) -> None:
     log_event("run_summary", **(summary or {"run_id": run_id, "status": "missing"}))
 
 
+def _is_healthcheck(argv: Sequence[str] | None) -> bool:
+    """True when the first non-option argv token is ``healthcheck`` (it maps errors to 1)."""
+    tokens = sys.argv[1:] if argv is None else list(argv)
+    return next((t for t in tokens if not t.startswith("-")), None) == "healthcheck"
+
+
+def _healthcheck(args: argparse.Namespace) -> int:
+    """Run the healthcheck; every failure is one ``unhealthy:`` stdout line and exit code 1.
+
+    Builds settings only to find the database path: no ``init_db``, no read-write connection.
+    """
+    try:
+        settings = Settings.from_env()
+        if args.db:
+            settings = settings.with_overrides(db_path=Path(args.db))
+        return run_healthcheck(settings.db_path, max_age_s=args.max_age)
+    except ConfigError as exc:
+        print(f"unhealthy: configuration error: {exc}", flush=True)
+        return 1
+    except Exception as exc:  # noqa: BLE001 - the verdict must always be 0 or 1
+        print(f"unhealthy: {type(exc).__name__}: {exc}", flush=True)
+        return 1
+
+
 def main(argv: Sequence[str] | None = None, *, _transport=None, _sleep=None) -> int:
     """Run the CLI. ``_transport`` and ``_sleep`` are test seams for offline runs."""
     _line_buffer_stdout()
@@ -159,7 +210,12 @@ def main(argv: Sequence[str] | None = None, *, _transport=None, _sleep=None) -> 
         if args.command == "collect" and args.trigger == "scheduler" and args.slot is None:
             parser.error("--trigger scheduler requires --slot")
     except SystemExit as exc:
-        return exc.code if isinstance(exc.code, int) else 2
+        code = exc.code if isinstance(exc.code, int) else 2
+        if _is_healthcheck(argv) and code != 0:
+            return 1  # Docker reserves healthcheck exit code 2
+        return code
+    if args.command == "healthcheck":
+        return _healthcheck(args)
     try:
         settings = Settings.from_env()
         if getattr(args, "db", None):
