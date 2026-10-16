@@ -640,6 +640,22 @@ def test_characteristics_column_config_links_and_hides_the_index(db_path):
     assert has([config["Доставка, дн."]["help"]], "0 — сегодня, 1 — завтра")
 
 
+def test_no_table_column_uses_the_browser_locale_for_numbers(db_path):
+    """VIS-2: 'localized' prints '1,073' in an en-US browser; every number format is explicit."""
+    scenario_mixed(db_path)
+    at = run_app()
+    assert not at.exception
+    seen: dict[str, set[str]] = {}
+    for element in at.dataframe:
+        for name, config in json.loads(element.proto.columns).items():
+            kind = config.get("type_config", {})
+            if kind.get("type") == "number":
+                seen.setdefault(name, set()).add(kind.get("format"))
+    assert "localized" not in {f for formats in seen.values() for f in formats}
+    assert seen["Цена, ₽"] == {"%d"}
+    assert seen["Отзывов"] == {"%d"}
+
+
 def test_history_expander_lists_every_observation_of_the_selection(db_path):
     scenario_mixed(db_path)
     at = run_app()

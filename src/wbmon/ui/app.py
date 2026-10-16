@@ -124,9 +124,11 @@ def _table_config(*, characteristics: bool = False, history: bool = False) -> di
     cc = st.column_config
     config: dict[str, object] = {
         texts.COL_ID: _link_column(),
-        texts.COL_PRICE: cc.NumberColumn(format="localized"),
+        # "%d", not "localized": the browser locale would print "1,073" in the Russian UI (VIS-2);
+        # the unit is in the column title «Цена, ₽».
+        texts.COL_PRICE: cc.NumberColumn(format="%d"),
         texts.COL_RATING: cc.NumberColumn(format="%.1f"),
-        texts.COL_FEEDBACKS: cc.NumberColumn(format="localized"),
+        texts.COL_FEEDBACKS: cc.NumberColumn(format="%d"),
         texts.COL_DELIVERY: cc.NumberColumn(format="%d", help=texts.DELIVERY_HELP),
         texts.COL_AD: cc.TextColumn(help=texts.AD_HELP),
         texts.COL_POSITION: cc.NumberColumn(format="%d"),
