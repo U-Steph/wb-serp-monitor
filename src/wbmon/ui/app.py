@@ -265,6 +265,55 @@ def render_positions_tab(
         render_product_tables(points, selected, options, query, clock.utc_now())
 
 
+def render_snapshot_tab(
+    path: str, ver: data.DataVersion, overview: Mapping, query: Mapping | None
+) -> None:
+    """The stored top-N of the selected query at a chosen run, with four headline numbers."""
+    st.subheader(texts.SNAPSHOT_TITLE)
+    if not overview["n_runs"]:
+        st.info(texts.BANNER_NO_RUNS)
+        return
+    if query is None:
+        st.info(texts.EMPTY_QUERY_NO_DATA)
+        return
+    query_id = int(query["query_id"])
+    # The sheet text is untrusted: st.text shows it verbatim, st.caption would render Markdown.
+    st.text(texts.query_label(int(query["sheet_order"]), str(query["text"])))
+    runs = data.load_snapshot_runs(path, ver, query_id)
+    if runs.empty:
+        st.info(texts.SNAPSHOT_EMPTY)
+        render_query_attempts(path, ver, query_id)
+        return
+    oldest_first = runs.iloc[::-1]
+    run_ids = [int(r) for r in oldest_first["run_id"]]
+    labels = {
+        int(r): texts.fmt_dt_short(series.to_msk_one(str(t)))  # type: ignore[arg-type]
+        for r, t in zip(oldest_first["run_id"], oldest_first["started_at"], strict=True)
+    }
+    statuses = {
+        int(r): str(x) for r, x in zip(oldest_first["run_id"], oldest_first["status"], strict=True)
+    }
+    run_id = st.select_slider(
+        texts.SNAPSHOT_SLIDER_LABEL,
+        options=run_ids,
+        value=run_ids[-1],
+        format_func=labels.__getitem__,
+        key=f"snap_{query_id}",
+    )
+    snapshot = data.load_snapshot(path, ver, int(run_id), query_id)
+    metrics = series.snapshot_metrics(snapshot, statuses[int(run_id)])
+    for column, (label, value) in zip(st.columns(4, gap="small"), metrics.items(), strict=True):
+        column.metric(label, value)
+    st.dataframe(
+        series.snapshot_frame(snapshot),
+        hide_index=True,
+        width="stretch",
+        height=640,
+        placeholder="—",
+        column_config=_table_config(),
+    )
+
+
 def render_runlog_tab(run_log: pd.DataFrame, latest: Mapping | None) -> None:
     """The run table: the latest 200 runs, newest first."""
     st.subheader(texts.RUNLOG_TITLE)
@@ -289,7 +338,7 @@ def render_runlog_tab(run_log: pd.DataFrame, latest: Mapping | None) -> None:
 
 
 def main() -> None:
-    """Build the page: header, sidebar filters and totals, the positions and run-log tabs."""
+    """Build the page: header, sidebar filters and totals, positions, snapshot, run-log tabs."""
     st.set_page_config(page_title=texts.PAGE_TITLE, page_icon=texts.PAGE_ICON, layout="wide")
     st.title(texts.TITLE)
     try:
@@ -327,10 +376,14 @@ def main() -> None:
     render_header(overview, latest, blocked_http, settings)
     query, period, n = render_sidebar_filters(queries)
     render_sidebar_totals(overview)
-    positions_tab, runlog_tab = st.tabs([texts.TAB_POSITIONS, texts.TAB_RUNLOG])
+    positions_tab, snapshot_tab, runlog_tab = st.tabs(
+        [texts.TAB_POSITIONS, texts.TAB_SNAPSHOT, texts.TAB_RUNLOG]
+    )
     with positions_tab:
         top_n = int(overview["top_n_latest"] or settings.top_n)
         _guarded(render_positions_tab, path, ver, overview, query, period, n, top_n)
+    with snapshot_tab:
+        _guarded(render_snapshot_tab, path, ver, overview, query)
     with runlog_tab:
         _guarded(render_runlog_tab, run_log, latest)
 

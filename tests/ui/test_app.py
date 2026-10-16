@@ -34,7 +34,7 @@ from ui.dbbuilder import (
 )
 from wbmon.clock import iso_z, utc_now
 from wbmon.storage.db import connect_ro
-from wbmon.ui import series
+from wbmon.ui import series, texts
 
 APP = str(Path(__file__).resolve().parents[2] / "src" / "wbmon" / "ui" / "app.py")
 NO_SUCCESS = "Успешных сборов пока нет"
@@ -375,7 +375,7 @@ def test_sidebar_offers_every_query_in_sheet_order_with_original_wording(db_path
     assert at.sidebar.selectbox[0].options == [f"01. {Q1}", f"02. {Q2}", f"03. {Q3}"]
     assert Q2 in at.sidebar.selectbox[0].options[1]  # Cyrillic "х" kept
     assert at.sidebar.selectbox[0].options[2].endswith("50x70")  # Latin "x" kept
-    assert [t.label for t in at.tabs][:2] == ["📈 Позиции", "🩺 Журнал сборов"]
+    assert [t.label for t in at.tabs][:3] == ["📈 Позиции", "🗂 Выдача", "🩺 Журнал сборов"]
     assert at.sidebar.segmented_control[0].value == "Всё время"
     assert at.sidebar.number_input[0].value == 5
 
@@ -661,3 +661,126 @@ def test_marketplace_text_stays_inside_the_table_cells(db_path):
     shown = markdown_values(at) + caption_values(at) + info_values(at)
     assert not has(shown, "e.x)")
     assert not has(shown, "<b>x</b>")
+
+
+# ------------------------------------------------------------------------ the «Выдача» tab
+
+SNAPSHOT_FRAME_COLUMNS = list(series.SNAPSHOT_COLUMNS)
+
+
+def find_exact_df(at: AppTest, columns: list[str]) -> pd.DataFrame:
+    for element in at.dataframe:
+        if list(element.value.columns) == columns:
+            return element.value
+    raise AssertionError(f"no dataframe with columns {columns!r}")
+
+
+def started_label(db_path: Path, run_id: int) -> str:
+    return texts.fmt_dt_short(series.to_msk_one(iso_z(parse_started(db_path, run_id))))
+
+
+def test_tabs_are_positions_snapshot_run_log(db_path):
+    scenario_mixed(db_path)
+    at = run_app()
+    assert [t.label for t in at.tabs] == ["📈 Позиции", "🗂 Выдача", "🩺 Журнал сборов"]
+
+
+def test_snapshot_slider_defaults_to_the_newest_run_with_data(db_path):
+    built = scenario_mixed(db_path)
+    r1, _, r3, r4, r5, r6 = built.run_ids
+    at = run_app()
+    assert not at.exception
+    slider = at.select_slider[0]
+    assert slider.label == "Момент сбора (МСК)"
+    assert slider.value == r6
+    assert slider.options == [started_label(db_path, r) for r in (r1, r3, r4, r5, r6)]
+
+
+def test_snapshot_shows_four_metrics_and_the_full_top_in_order(db_path):
+    scenario_mixed(db_path)
+    at = run_app()
+    assert not at.exception
+    assert {m.label: m.value for m in at.metric} == {
+        "Товаров собрано": "5",
+        "Из них рекламных": "1",
+        "Медианная цена, ₽": "1\u202f003",
+        "Статус сбора": "✅ Успешно",
+    }
+    frame = find_exact_df(at, SNAPSHOT_FRAME_COLUMNS)
+    assert [u.rsplit("/", 2)[1] for u in frame["ID"]] == [str(n) for n in (A, B, D, C, E)]
+    assert list(frame["Позиция"]) == [1, 2, 3, 4, 5]
+    assert list(frame["Реклама"]) == ["", "", "", "", "✓"]
+    assert "Выдача по запросу" in [h.value for h in at.subheader]
+
+
+def test_choosing_a_partial_run_shows_its_two_rows_and_status(db_path):
+    built = scenario_mixed(db_path)
+    at = run_app()
+    at.select_slider[0].set_value(built.run_ids[3]).run()
+    assert not at.exception
+    frame = find_exact_df(at, SNAPSHOT_FRAME_COLUMNS)
+    assert [u.rsplit("/", 2)[1] for u in frame["ID"]] == [str(C), str(A)]
+    assert {m.label: m.value for m in at.metric}["Статус сбора"] == "🟡 Частично"
+    assert {m.label: m.value for m in at.metric}["Товаров собрано"] == "2"
+
+
+def test_changing_the_query_resets_the_slider_to_its_newest_run(db_path):
+    built = scenario_mixed(db_path)
+    at = run_app()
+    at.select_slider[0].set_value(built.run_ids[3]).run()
+    assert at.select_slider[0].value == built.run_ids[3]
+    at.sidebar.selectbox[0].select(built.query_ids[Q3]).run()
+    assert not at.exception
+    assert at.select_slider[0].value == built.run_ids[-1]
+    assert len(at.select_slider[0].options) == 6
+    frame = find_exact_df(at, SNAPSHOT_FRAME_COLUMNS)
+    assert len(frame) == len(Q3_IDS)
+
+
+def test_all_blocked_snapshot_tab_shows_the_info_and_the_attempts(db_path):
+    scenario_all_blocked(db_path)
+    at = run_app()
+    assert not at.exception
+    assert "По этому запросу пока нет успешных сборов. Ниже — результат последних попыток." in (
+        info_values(at)
+    )
+    assert not at.select_slider
+    assert not at.metric
+    attempts = [e.value for e in at.dataframe if "Причина" in e.value.columns]
+    assert len(attempts) == 2  # one under the positions tab, one under the snapshot tab
+    assert all(len(frame) == 3 for frame in attempts)
+
+
+def test_a_single_run_gives_a_slider_with_one_option(db_path):
+    started = iso_z(utc_now() - timedelta(minutes=10))
+    build_db(db_path, [RunSpec(started, {Q1: ok_result(started, (A, B))}, n_queries=3)])
+    at = run_app()
+    assert not at.exception
+    assert len(at.select_slider[0].options) == 1
+    assert len(find_exact_df(at, SNAPSHOT_FRAME_COLUMNS)) == 2
+
+
+def test_snapshot_query_label_is_plain_text_not_markdown(db_path):
+    scenario_mixed(db_path)
+    at = run_app()
+    assert [t.value for t in at.text] == [f"01. {Q1}"]
+    assert not has(caption_values(at), f"01. {Q1}")
+
+
+def test_zero_runs_snapshot_tab_shows_only_the_info(db_path):
+    from wbmon.storage.migrations import init_db
+
+    init_db(db_path)
+    at = run_app()
+    assert not at.exception
+    assert not at.select_slider
+    assert not at.metric
+
+
+def test_snapshot_keeps_marketplace_text_inside_cells(db_path):
+    name = hostile_db(db_path)
+    at = run_app()
+    assert not at.exception
+    frame = find_exact_df(at, SNAPSHOT_FRAME_COLUMNS)
+    assert name in list(frame["Название"])
+    assert not has(markdown_values(at) + caption_values(at) + info_values(at), "e.x)")
