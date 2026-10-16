@@ -17,7 +17,7 @@ Sources: TZ (`TZ_Wildberries_short_2026.pdf`), `.planning/PROJECT.md`, `.plannin
 ### Collection (COL)
 
 - [ ] **COL-01**: For each query the collector requests the WB public search JSON (`exactmatch/ru/common/v{N}/search`, `sort=popular`, `resultset=catalog`, fixed `dest` for Moscow, `curr=rub`) with a plain `httpx` client, ordinary headers and a polite sequential rate (configurable delay).
-- [ ] **COL-02**: It paginates until `top_n` products are collected (default 200, configurable via env/CLI), a page is empty, or a page wrap-around (page N repeats page 1, detected by an id fingerprint) occurs; positions are 1-based across pages in the exact array order (ads included).
+- [x] **COL-02**: It paginates until `top_n` products are collected (default 200, configurable via env/CLI), a page is empty, or a page wrap-around (page N repeats page 1, detected by an id fingerprint) occurs; positions are 1-based across pages in the exact array order (ads included).
 - [ ] **COL-03**: Every HTTP outcome is classified before parsing: `ok`, `blocked` (403, 498, HTML body at 200), `rate_limited` (429, `Retry-After` honoured at most once), `error` (5xx/timeouts after ≤2 bounded retries; schema drift; `products: null`); 200-with-zero-products is recorded as an error, never as "no results".
 - [ ] **COL-04**: A failing query never aborts the run (per-query isolation); a circuit breaker stops sending requests after 3 consecutive `blocked` queries and records the remaining queries as `blocked` (`circuit_open`) without requests.
 - [x] **COL-05**: The collector never attempts anti-bot circumvention (no TLS impersonation, no stealth/headless browser, no token/cookie harvesting or replay, no CAPTCHA/PoW solving, no proxy rotation) — enforced by dependency list and code review.
@@ -26,12 +26,12 @@ Sources: TZ (`TZ_Wildberries_short_2026.pdf`), `.planning/PROJECT.md`, `.plannin
 ### Normalized fields (DATA)
 
 - [x] **DATA-01**: Each observation stores: query id, run id, collection timestamp (UTC), position, `nm_id`.
-- [ ] **DATA-02**: Buyer price in rubles = minimum over sizes of `sizes[].price.product / 100`; `basic`, `total`, `logistics` kept as audit columns; NULL (not 0) when no priced size exists.
-- [ ] **DATA-03**: Rating = `reviewRating` (0/missing → NULL); review count = `feedbacks` (missing → NULL); `nmReviewRating`/`nmFeedbacks` stored as extra columns.
-- [ ] **DATA-04**: Delivery: raw `time1`/`time2` (hours) stored; `delivery_days` = calendar-day difference in Europe/Moscow between collection time and collection time + (time1 + time2) hours (today = 0, tomorrow = 1), computed by one pure, unit-tested function so it can be recalibrated; NULL when the inputs are missing.
-- [ ] **DATA-05**: Seller name = `supplier` (+ `supplierId`); product name and brand stored for search/labels.
-- [ ] **DATA-06**: Promoted slots flagged (`is_promoted` from the `log` object) with ad fields (`promoPosition`, organic `log.position`, `tp`, `cpm`) kept for audit.
-- [ ] **DATA-07**: No field is ever invented: anything unavailable is NULL; normalizer is a pure function covered by fixture tests (both `data.products` and top-level `products` shapes, multi-size prices, missing fields, ads).
+- [x] **DATA-02**: Buyer price in rubles = minimum over sizes of `sizes[].price.product / 100`; `basic`, `total`, `logistics` kept as audit columns; NULL (not 0) when no priced size exists.
+- [x] **DATA-03**: Rating = `reviewRating` (0/missing → NULL); review count = `feedbacks` (missing → NULL); `nmReviewRating`/`nmFeedbacks` stored as extra columns.
+- [x] **DATA-04**: Delivery: raw `time1`/`time2` (hours) stored; `delivery_days` = calendar-day difference in Europe/Moscow between collection time and collection time + (time1 + time2) hours (today = 0, tomorrow = 1), computed by one pure, unit-tested function so it can be recalibrated; NULL when the inputs are missing.
+- [x] **DATA-05**: Seller name = `supplier` (+ `supplierId`); product name and brand stored for search/labels.
+- [x] **DATA-06**: Promoted slots flagged (`is_promoted` from the `log` object) with ad fields (`promoPosition`, organic `log.position`, `tp`, `cpm`) kept for audit.
+- [x] **DATA-07**: No field is ever invented: anything unavailable is NULL; normalizer is a pure function covered by fixture tests (both `data.products` and top-level `products` shapes, multi-size prices, missing fields, ads).
 
 ### Storage (STOR)
 
@@ -110,18 +110,18 @@ Which phases cover which requirements. Updated during roadmap creation (2026-10-
 | QRY-03 | Phase 1 | Complete |
 | QRY-04 | Phase 1 | Complete |
 | COL-01 | Phase 1 | Pending |
-| COL-02 | Phase 1 | Pending |
+| COL-02 | Phase 1 | Complete |
 | COL-03 | Phase 1 | Pending |
 | COL-04 | Phase 1 | Pending |
 | COL-05 | Phase 1 | Complete |
 | COL-06 | Phase 1 | Pending |
 | DATA-01 | Phase 1 | Complete |
-| DATA-02 | Phase 1 | Pending |
-| DATA-03 | Phase 1 | Pending |
-| DATA-04 | Phase 1 | Pending |
-| DATA-05 | Phase 1 | Pending |
-| DATA-06 | Phase 1 | Pending |
-| DATA-07 | Phase 1 | Pending |
+| DATA-02 | Phase 1 | Complete |
+| DATA-03 | Phase 1 | Complete |
+| DATA-04 | Phase 1 | Complete |
+| DATA-05 | Phase 1 | Complete |
+| DATA-06 | Phase 1 | Complete |
+| DATA-07 | Phase 1 | Complete |
 | STOR-01 | Phase 1 | Complete |
 | STOR-02 | Phase 1 | Complete |
 | STOR-03 | Phase 1 | Pending |
