@@ -14,11 +14,44 @@ from datetime import datetime
 import httpx
 
 from wbmon import clock
-from wbmon.classify import DEFAULT_RETRY_AFTER, RETRY_AFTER_CAP, parse_retry_after
+from wbmon.classify import (
+    DEFAULT_RETRY_AFTER,
+    MAX_BODY_BYTES,
+    RETRY_AFTER_CAP,
+    parse_retry_after,
+)
 from wbmon.config import Settings
 from wbmon.models import PageFetch
 
 RETRY_BACKOFF = (2.0, 5.0)  # fixed sleeps before the 1st and 2nd retry of a transient failure
+REQUEST_TOTAL_SECONDS = 60.0  # wall-clock cap per request; httpx's own timeouts are per socket op
+
+
+def read_capped(
+    response: httpx.Response,
+    *,
+    max_bytes: int,
+    max_seconds: float,
+    monotonic: Callable[[], float],
+    started: float,
+) -> bytes:
+    """Read a streamed body, stopping at ``max_bytes`` + 1 bytes or after ``max_seconds`` in total.
+
+    The (decoded) body is never buffered beyond the cap, so a huge or gzip-bombed response cannot
+    spike memory. Returning more than ``max_bytes`` bytes tells the caller the body was too large.
+    A body that is still arriving after ``max_seconds`` (a slow drip that keeps every individual
+    socket read under the httpx timeout) raises ``httpx.ReadTimeout``.
+    """
+    chunks: list[bytes] = []
+    size = 0
+    for chunk in response.iter_bytes():
+        chunks.append(chunk)
+        size += len(chunk)
+        if size > max_bytes:
+            return b"".join(chunks)[: max_bytes + 1]
+        if monotonic() - started > max_seconds:
+            raise httpx.ReadTimeout(f"response not complete after {max_seconds:g} s")
+    return b"".join(chunks)
 
 
 class NoCookiesPolicy(http.cookiejar.CookiePolicy):
@@ -125,19 +158,30 @@ class WbClient:
         content_type = server = retry_after = transport_error = None
         content = b""
         try:
-            response = self._http.get(
-                self._settings.search_url, params=self._settings.search_params(query, page)
-            )
+            with self._http.stream(
+                "GET",
+                self._settings.search_url,
+                params=self._settings.search_params(query, page),
+            ) as response:
+                status_code = response.status_code
+                content_type = response.headers.get("content-type")
+                server = response.headers.get("server")
+                retry_after = response.headers.get("retry-after")
+                content = read_capped(
+                    response,
+                    max_bytes=MAX_BODY_BYTES,
+                    max_seconds=REQUEST_TOTAL_SECONDS,
+                    monotonic=self._monotonic,
+                    started=started,
+                )
         except httpx.TimeoutException:
             transport_error = "timeout"
+            status_code = content_type = server = retry_after = None
+            content = b""
         except httpx.TransportError:
             transport_error = "connection"
-        else:
-            status_code = response.status_code
-            content_type = response.headers.get("content-type")
-            server = response.headers.get("server")
-            retry_after = response.headers.get("retry-after")
-            content = response.content
+            status_code = content_type = server = retry_after = None
+            content = b""
         return PageFetch(
             query=query,
             page=page,

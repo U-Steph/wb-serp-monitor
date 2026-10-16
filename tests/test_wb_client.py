@@ -10,6 +10,7 @@ import pytest
 from factories import (
     FakeWB,
     RecordingSleep,
+    SteppingClock,
     build_wb_client,
     html_response,
     json_response,
@@ -302,3 +303,79 @@ def test_wb_client_source_has_no_jitter_and_no_redirect_following():
     source = (SRC_DIR / "wb_client.py").read_text(encoding="utf-8")
     assert "random" not in source
     assert "follow_redirects=True" not in source
+
+
+# ------------------------------------------------- WR-02: size and total-time caps are streamed
+
+
+class CountingBody:
+    """A response body of ``n_chunks`` chunks that records how many chunks were actually read."""
+
+    def __init__(self, chunk: bytes, n_chunks: int, on_chunk=None) -> None:
+        self.chunk, self.n_chunks, self.on_chunk = chunk, n_chunks, on_chunk
+        self.chunks_read = 0
+
+    def __iter__(self):
+        for _ in range(self.n_chunks):
+            self.chunks_read += 1
+            if self.on_chunk is not None:
+                self.on_chunk()
+            yield self.chunk
+
+
+def test_oversized_body_is_cut_off_while_streaming():
+    from wbmon.classify import MAX_BODY_BYTES, classify_page
+
+    body = CountingBody(b"x" * (1024 * 1024), 1000)  # would be 1 GiB if buffered
+    client, _, _ = make_client([httpx.Response(200, content=body)])
+
+    fetch = client.fetch_page(Q, 1)
+
+    assert body.chunks_read <= MAX_BODY_BYTES // (1024 * 1024) + 1
+    assert len(fetch.content) == MAX_BODY_BYTES + 1
+    verdict = classify_page(fetch)
+    assert (verdict.outcome, verdict.error_class) == ("error", "body_too_large")
+
+
+def test_gzip_bomb_is_cut_off_after_decoding():
+    import gzip
+
+    from wbmon.classify import MAX_BODY_BYTES, classify_page
+
+    bomb = gzip.compress(b"\0" * (MAX_BODY_BYTES * 3))
+    assert len(bomb) < 100_000
+    response = httpx.Response(200, content=bomb, headers={"content-encoding": "gzip"})
+    client, _, _ = make_client([response])
+
+    fetch = client.fetch_page(Q, 1)
+
+    assert classify_page(fetch).error_class == "body_too_large"
+    assert len(fetch.content) <= MAX_BODY_BYTES + 1
+
+
+def test_slow_drip_body_hits_the_total_request_deadline_as_timeout():
+    from wbmon.classify import classify_page
+    from wbmon.wb_client import REQUEST_TOTAL_SECONDS
+
+    ticks = SteppingClock()
+    body = CountingBody(b" ", 1000, on_chunk=lambda: ticks.advance(25))  # 25 s per byte
+    fake = FakeWB({(Q, 1): [httpx.Response(200, content=body)]})
+    client = build_wb_client(fake, sleep=RecordingSleep(), monotonic=ticks)
+
+    fetch = client.fetch_page(Q, 1, retry=False)
+
+    assert fetch.transport_error == "timeout"
+    assert fetch.status_code is None
+    assert body.chunks_read <= REQUEST_TOTAL_SECONDS // 25 + 2
+    verdict = classify_page(fetch)
+    assert (verdict.outcome, verdict.error_class) == ("error", "timeout")
+
+
+def test_normal_body_is_still_read_completely():
+    payload = make_page(900000001, 3)
+    client, _, _ = make_client([json_response(payload)])
+
+    fetch = client.fetch_page(Q, 1)
+
+    assert fetch.status_code == 200
+    assert b"900000001" in fetch.content

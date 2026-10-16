@@ -311,11 +311,11 @@ def test_deadline_records_remaining_queries_without_requests(capsys):
     clock_ = SteppingClock()
 
     def slow_page(request: httpx.Request) -> httpx.Response:
-        clock_.advance(1000)
+        clock_.advance(50)  # slow, but inside the 60 s per-request cap
         return ok_page()
 
     fake = FakeWB({(qs[0], 1): [slow_page]})
-    settings = make_settings(top_n=5, run_deadline=60)
+    settings = make_settings(top_n=5, run_deadline=30)
 
     run_id, _ = run(fake, settings, monotonic=clock_)
 
@@ -325,7 +325,7 @@ def test_deadline_records_remaining_queries_without_requests(capsys):
     assert len(late) == 69
     for row in late:
         assert (row["status"], row["error_class"]) == ("error", "deadline")
-        assert "run deadline of 60 s exceeded" in row["error_message"]
+        assert "run deadline of 30 s exceeded" in row["error_message"]
         assert row["duration_ms"] == 0
     assert len(fake.wb_requests()) == 1
     assert run_row(run_id)["status"] == "partial"

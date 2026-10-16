@@ -363,3 +363,21 @@ def test_run_once_falls_back_to_bundled_when_sheet_is_unreachable():
 
     with contextlib.closing(sqlite3.connect(os.environ["WBMON_DB_PATH"])) as con:
         assert con.execute("SELECT query_source FROM runs").fetchone() == ("bundled",)
+
+
+def test_oversized_sheet_is_cut_off_while_streaming():
+    """WR-02: the cap must stop the download, not just reject a fully buffered body."""
+    from wbmon.queries import SHEET_MAX_BYTES
+
+    chunks_read = 0
+
+    def endless():
+        nonlocal chunks_read
+        for _ in range(100_000):
+            chunks_read += 1
+            yield b"a\n" * 50_000  # 100 kB per chunk
+
+    result, _ = load([httpx.Response(200, content=endless(), headers=CSV_HEADERS)])
+
+    assert (result.source, result.reason) == ("bundled", "too_large")
+    assert chunks_read <= SHEET_MAX_BYTES // 100_000 + 2

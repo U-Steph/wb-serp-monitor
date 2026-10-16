@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import csv
 import io
+import time
 from importlib import resources
 from typing import TYPE_CHECKING
 
 import httpx
 
 from wbmon.models import QuerySet
-from wbmon.wb_client import NoCookiesPolicy
+from wbmon.wb_client import NoCookiesPolicy, read_capped
 
 if TYPE_CHECKING:
     from wbmon.config import Settings
@@ -19,6 +20,7 @@ BUNDLED_RESOURCE = "data/queries_bundled.txt"
 SHEET_MIN_ROWS = 50  # a sheet outside 50..500 queries is treated as broken, not as the truth
 SHEET_MAX_ROWS = 500
 SHEET_MAX_BYTES = 1_048_576
+SHEET_TOTAL_SECONDS = 30.0  # wall-clock cap for the whole export download
 
 
 def load_bundled() -> tuple[str, ...]:
@@ -82,11 +84,19 @@ def load_queries(settings: Settings, *, transport: httpx.BaseTransport | None = 
     ``implausible_count=<n>`` or ``fetch_failed:<ExceptionClass>``).
     """
     try:
-        with make_sheet_client(settings, transport=transport) as client:
-            response = client.get(settings.sheet_csv_url)
-        if response.status_code != 200:
-            return _fallback(f"http_{response.status_code}")
-        content = response.content
+        with (
+            make_sheet_client(settings, transport=transport) as client,
+            client.stream("GET", settings.sheet_csv_url) as response,
+        ):
+            if response.status_code != 200:
+                return _fallback(f"http_{response.status_code}")
+            content = read_capped(
+                response,
+                max_bytes=SHEET_MAX_BYTES,
+                max_seconds=SHEET_TOTAL_SECONDS,
+                monotonic=time.monotonic,
+                started=time.monotonic(),
+            )
         if len(content) > SHEET_MAX_BYTES:
             return _fallback("too_large")
         try:
