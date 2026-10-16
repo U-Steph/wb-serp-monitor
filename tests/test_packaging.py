@@ -415,6 +415,8 @@ def test_caddyfile_proxies_to_streamlit():
     text = CADDYFILE.read_text(encoding="utf-8")
     assert "{$SITE_ADDRESS}" in text
     assert "reverse_proxy web:8501" in text
+    assert "encode zstd gzip" in text
+    assert text.index("encode zstd gzip") < text.index("reverse_proxy")  # inside the site block
 
 
 def test_compose_text_has_no_latest_tag_and_documents_the_compose_version():
