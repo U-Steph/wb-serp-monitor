@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-01-PLAN.md (wbmon scheduler + healthcheck, heartbeat, signals)
+stopped_at: Completed 02-02-PLAN.md (Docker/compose/Makefile packaging; .env.example deferred)
 last_updated: "2026-10-16T14:44:28.186Z"
 last_activity: 2026-10-16
 progress:
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-10-16)
 ## Current Position
 
 Phase: 02 of 4 (unattended operation packaging)
-Plan: 3-01 complete (1 of 3 planned)
-Status: Phase 2 in progress; next 02-02
+Plan: 02-02 complete (2 of 3 planned; .env.example deferred)
+Status: Phase 2 in progress; next 02-03
 Last activity: 2026-10-16
 
 Progress: [██████████] 100% of Phase 1 plans
@@ -90,6 +90,7 @@ None yet.
 - [Phase 1/4]: WB anti-bot layer returns 403/498 to non-browser clients from the dev machine; reachability from the deploy host is unknown (go/no-go probe in Phase 4). If blocked: honest blocked history, user decides next step - no circumvention.
 - [Phase 4]: Hosting not decided - requires the user to provide a host (likely a Russian VPS with Docker Compose) and approve publishing.
 - [Phase 1]: Delivery-days formula, price field (`min(sizes[].price.product)/100`), rating/review semantics and Moscow `dest=-1257786` are unverified hypotheses; raw inputs are stored so they can be recalibrated.
+- [Phase 2/4]: `.env.example` not created in 02-02 (user permission denies `.env*` writes); ready content at the executor scratchpad (`env_example.txt`, tests in `env_tests.py`); OPS-02 left open, to be covered by the Phase 4 README configuration table or by the user adding the file.
 - .env.example not created (user permission denies .env* writes); content at scratchpad env_example.txt; OPS-02 docs deferred to Phase 4 README
 
 ## Deferred Items
