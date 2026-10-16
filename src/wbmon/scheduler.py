@@ -41,11 +41,18 @@ from wbmon.signals import StopFlag, install_stop_handlers
 from wbmon.storage import reader
 from wbmon.storage.db import connect_ro
 from wbmon.storage.migrations import init_db
+from wbmon.wb_client import MAX_ATTEMPT_SECONDS
 
 TICK_S = 1.0
 HEARTBEAT_EVERY_S = 30.0
 CHILD_TERM_GRACE_S = 30.0
-STOP_GRACE_S = 60.0
+# Graceful-stop budget (WR-01). A SIGTERM'd ``collect`` cancels every pacing/back-off/Retry-After
+# wait and every further page, so it only has to outlive the one request already on the wire
+# (MAX_ATTEMPT_SECONDS) plus the writes that record the remaining queries as ``terminated`` and
+# close the run. Ordering that must hold (a test checks it against compose.yaml):
+#     compose stop_grace_period  >  STOP_GRACE_S  >  MAX_ATTEMPT_SECONDS + finish margin.
+STOP_FINISH_MARGIN_S = 20.0
+STOP_GRACE_S = MAX_ATTEMPT_SECONDS + STOP_FINISH_MARGIN_S
 CHILD_TIMEOUT_MARGIN_S = 600.0
 _LATE_START_LOG_S = 60
 

@@ -424,7 +424,11 @@ def test_stop_with_a_sigterm_ignoring_child_kills_after_the_stop_grace(tmp_path,
     out = capsys.readouterr().out
     child = h.spawns[0].child
     assert child.signals == ["term", "kill"]
-    assert child.signal_at["kill"] - child.signal_at["term"] >= h.sched.stop_grace_s == 60
+    assert (
+        child.signal_at["kill"] - child.signal_at["term"]
+        >= h.sched.stop_grace_s
+        == scheduler.STOP_GRACE_S
+    )
     assert len(h.spawns) == 1
     assert events(out, "shutdown")[0]["last_slot"] == "2026-10-16T09:00:00Z"
     assert [f["reason"] for f in events(out, "run_failed")] == ["shutdown"]

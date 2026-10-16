@@ -12,7 +12,15 @@ from wbmon.log import log_event
 from wbmon.models import PageFetch, PageVerdict, QueryResult
 from wbmon.normalize import extract_normquery, normalize_product
 from wbmon.pager import Pager
-from wbmon.wb_client import WbClient
+from wbmon.wb_client import StopRequested, WbClient
+
+_TERMINATED = PageVerdict(
+    outcome="error",
+    error_class="terminated",
+    products=None,
+    payload=None,
+    message="SIGTERM received; no further request sent",
+)
 
 
 def collect_query(
@@ -23,6 +31,7 @@ def collect_query(
     tz: tzinfo,
     now: Callable[[], datetime] = clock.utc_now,
     monotonic: Callable[[], float] = time.monotonic,
+    should_stop: Callable[[], bool] = lambda: False,
 ) -> QueryResult:
     """Fetch pages of ``query`` until the top-``top_n`` is covered and normalise them in SERP order.
 
@@ -30,16 +39,26 @@ def collect_query(
     blocked / rate_limited / error result without observations. A failure on a later page keeps
     the rows of the earlier pages and is recorded as ``partial`` with the failing page's error
     class, so a half-collected SERP is never presented as complete.
+
+    ``should_stop`` is polled before every page (and inside the client's waits): once it is true
+    no further request is sent and the query ends as ``error`` / ``terminated`` (``partial`` /
+    ``terminated`` when earlier pages already yielded rows).
     """
     started_at = clock.iso_z(now())
     started = monotonic()
     pager = Pager(top_n)
     normquery: str | None = None
-    failure: tuple[PageVerdict, PageFetch] | None = None
+    failure: tuple[PageVerdict, PageFetch | None] | None = None
     last_status: int | None = None
     page = 1
     while not pager.done:
-        fetch = client.fetch_page(query, page)
+        try:
+            if should_stop():
+                raise StopRequested
+            fetch = client.fetch_page(query, page)
+        except StopRequested:
+            failure = (_TERMINATED, None)
+            break
         verdict = classify_page(fetch)
         if verdict.outcome not in ("ok", "end"):
             failure = (verdict, fetch)
@@ -63,7 +82,7 @@ def collect_query(
             started_at=started_at,
             duration_ms=elapsed_ms(),
             error_class=verdict.error_class,
-            http_status=fetch.status_code,
+            http_status=fetch.status_code if fetch is not None else None,
             pages_fetched=0,
             error_message=verdict.message,
         )
@@ -86,7 +105,7 @@ def collect_query(
             started_at=started_at,
             duration_ms=elapsed_ms(),
             error_class=verdict.error_class,
-            http_status=fetch.status_code,
+            http_status=fetch.status_code if fetch is not None else None,
             pages_fetched=pager.pages_seen,
             error_message=verdict.message,
         )
@@ -114,7 +133,7 @@ def collect_query(
         return QueryResult(
             status="partial",
             error_class=verdict.error_class,
-            http_status=fetch.status_code,
+            http_status=fetch.status_code if fetch is not None else None,
             error_message=verdict.message,
             is_complete=False,
             **common,  # type: ignore[arg-type]

@@ -164,10 +164,12 @@ def test_the_healthcheck_never_returns_docker_reserved_code_2(bad, monkeypatch, 
 
 def test_the_collector_stop_grace_period_outlasts_the_scheduler_stop_wait(compose):
     from wbmon import scheduler
+    from wbmon.wb_client import MAX_ATTEMPT_SECONDS
 
     grace = _seconds(compose["services"]["collector"]["stop_grace_period"])
 
     assert grace > scheduler.STOP_GRACE_S + 5 * scheduler.TICK_S
+    assert scheduler.STOP_GRACE_S > MAX_ATTEMPT_SECONDS  # WR-01: outlive the in-flight request
 
 
 def test_the_healthcheck_window_covers_at_least_three_heartbeat_intervals(compose):

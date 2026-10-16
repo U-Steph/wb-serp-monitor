@@ -33,7 +33,7 @@ from wbmon.normalize import extract_normquery, payload_shape
 from wbmon.orchestrator import run_once
 from wbmon.queries import load_bundled
 from wbmon.scheduler import run_scheduler
-from wbmon.signals import StopFlag, install_stop_handlers
+from wbmon.signals import StopFlag, install_stop_handlers, interruptible_sleep
 from wbmon.storage.db import connect_ro
 from wbmon.storage.migrations import init_db
 from wbmon.storage.reader import run_summary
@@ -245,6 +245,9 @@ def main(argv: Sequence[str] | None = None, *, _transport=None, _sleep=None) -> 
             # SIGTERM (docker stop, the scheduler's forward) finishes the in-flight query, records
             # the rest as `terminated` and closes the run; SIGINT keeps its default behaviour.
             stop = StopFlag()
+            # Pacing, back-off and Retry-After waits end early on a stop request (WR-01); a
+            # request already on the wire is bounded by wb_client.MAX_ATTEMPT_SECONDS.
+            sleep = _sleep or interruptible_sleep(lambda: stop.requested)
             with install_stop_handlers(stop, (signal.SIGTERM,)):
                 run_id = run_once(
                     settings,
@@ -252,7 +255,7 @@ def main(argv: Sequence[str] | None = None, *, _transport=None, _sleep=None) -> 
                     trigger=args.trigger,
                     slot_utc=args.slot,
                     transport=_transport,
-                    sleep=_sleep or time.sleep,
+                    sleep=sleep,
                     should_stop=lambda: stop.requested,
                 )
             if run_id is not None:

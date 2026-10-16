@@ -10,7 +10,10 @@ from __future__ import annotations
 import contextlib
 import signal
 import threading
-from collections.abc import Iterable, Iterator
+import time
+from collections.abc import Callable, Iterable, Iterator
+
+SLEEP_STEP_S = 0.5  # longest uninterrupted nap of an interruptible sleep
 
 
 class StopFlag:
@@ -49,3 +52,27 @@ def install_stop_handlers(
     finally:
         for signum, handler in previous.items():
             signal.signal(signum, handler if handler is not None else signal.SIG_DFL)
+
+
+def interruptible_sleep(
+    should_stop: Callable[[], bool],
+    *,
+    base: Callable[[float], None] = time.sleep,
+    step: float = SLEEP_STEP_S,
+) -> Callable[[float], None]:
+    """Return a ``sleep`` that naps in chunks of at most ``step`` s and ends early on a stop.
+
+    Since PEP 475 a plain ``time.sleep`` interrupted by a signal handler resumes for the remaining
+    time, so a flag-setting SIGTERM handler would otherwise wait out a whole pacing, back-off or
+    ``Retry-After`` pause. The remaining time is counted down (not read from a clock), so a fake
+    ``base`` in a test stays deterministic.
+    """
+
+    def _sleep(seconds: float) -> None:
+        remaining = seconds
+        while remaining > 0 and not should_stop():
+            nap = min(step, remaining)
+            base(nap)
+            remaining -= nap
+
+    return _sleep

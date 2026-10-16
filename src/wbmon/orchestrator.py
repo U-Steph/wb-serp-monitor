@@ -193,7 +193,9 @@ def _run_queries(
     """Process every query in order: collect, apply stop/breaker/deadline, record, log."""
     tz = settings.tzinfo()
     with make_http_client(settings, transport=transport) as http:
-        client = WbClient(http, settings, sleep=sleep, monotonic=monotonic, now=now)
+        client = WbClient(
+            http, settings, sleep=sleep, monotonic=monotonic, now=now, should_stop=should_stop
+        )
         deadline_at = monotonic() + settings.run_deadline
         consecutive = 0
         breaker_open = False
@@ -244,7 +246,13 @@ def _run_queries(
                 started = monotonic()
                 try:
                     result = collect_query(
-                        client, text, top_n=settings.top_n, tz=tz, now=now, monotonic=monotonic
+                        client,
+                        text,
+                        top_n=settings.top_n,
+                        tz=tz,
+                        now=now,
+                        monotonic=monotonic,
+                        should_stop=should_stop,
                     )
                 except Exception as exc:  # one bad query never aborts the run
                     result = QueryResult(

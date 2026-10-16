@@ -251,11 +251,11 @@ def build_wb_client(
     sleep: Callable[[float], None] | None = None,
     now: Callable | None = None,
     monotonic: Callable[[], float] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ):
     """Wire a ``WbClient`` to a ``FakeWB`` through an ``httpx.MockTransport``."""
-    from wbmon.wb_client import WbClient, make_http_client
-
     from wbmon import clock
+    from wbmon.wb_client import WbClient, make_http_client
 
     settings = settings if settings is not None else make_settings()
     http = make_http_client(settings, transport=httpx.MockTransport(fake))
@@ -265,4 +265,6 @@ def build_wb_client(
     }
     if monotonic is not None:
         kwargs["monotonic"] = monotonic
+    if should_stop is not None:
+        kwargs["should_stop"] = should_stop
     return WbClient(http, settings, **kwargs)

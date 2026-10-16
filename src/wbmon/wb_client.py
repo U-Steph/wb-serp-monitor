@@ -25,6 +25,18 @@ from wbmon.models import PageFetch
 
 RETRY_BACKOFF = (2.0, 5.0)  # fixed sleeps before the 1st and 2nd retry of a transient failure
 REQUEST_TOTAL_SECONDS = 60.0  # wall-clock cap per request; httpx's own timeouts are per socket op
+HTTP_CONNECT_S = 10.0
+HTTP_TIMEOUT_S = 30.0  # httpx read/write/pool timeout: per socket operation, not per request
+# Graceful-stop bound (WR-01). A stop request never interrupts a request that is already on the
+# wire, but it cancels every later pacing/back-off/Retry-After wait, retry and page. The longest
+# a single attempt can run is the connect, the request write, the response headers and one more
+# body read, each at its own timeout (the body deadline above fires right after that read).
+# `scheduler.STOP_GRACE_S` and the compose `stop_grace_period` are sized from this number.
+MAX_ATTEMPT_SECONDS = HTTP_CONNECT_S + 3 * HTTP_TIMEOUT_S
+
+
+class StopRequested(Exception):
+    """A stop was requested before the next request could be sent; nothing was sent."""
 
 
 def read_capped(
@@ -84,7 +96,7 @@ def make_http_client(
             "Accept": "application/json",
             "Accept-Language": "ru-RU,ru;q=0.9",
         },
-        timeout=httpx.Timeout(30.0, connect=10.0),
+        timeout=httpx.Timeout(HTTP_TIMEOUT_S, connect=HTTP_CONNECT_S),
         follow_redirects=False,  # a 3xx from WB is data to classify, never followed
         trust_env=False,  # ignore ambient proxy and certificate environment variables
         transport=transport,
@@ -104,18 +116,27 @@ class WbClient:
         sleep: Callable[[float], None] = time.sleep,
         monotonic: Callable[[], float] = time.monotonic,
         now: Callable[[], datetime] = clock.utc_now,
+        should_stop: Callable[[], bool] = lambda: False,
     ) -> None:
         self._http = http
         self._settings = settings
         self._sleep = sleep
         self._monotonic = monotonic
         self._now = now
+        self._should_stop = should_stop
         self._requests_made = 0
 
     @property
     def requests_made(self) -> int:
         """Number of requests sent so far."""
         return self._requests_made
+
+    def _wait(self, seconds: float) -> bool:
+        """Sleep ``seconds`` (the injected sleep may end early); True when a stop is requested."""
+        if self._should_stop():
+            return True
+        self._sleep(seconds)
+        return self._should_stop()
 
     def fetch_page(self, query: str, page: int, *, retry: bool = True) -> PageFetch:
         """Fetch one SERP page, politely and with bounded, status-specific retries.
@@ -125,9 +146,15 @@ class WbClient:
         after ``RETRY_BACKOFF`` seconds; a 429 is retried once after ``min(Retry-After or 30, 60)``
         seconds. 403 / 498 / 3xx / other 4xx are never retried: they are data, not glitches.
         ``attempts`` on the result counts the requests sent for this page.
+
+        Stop-aware: with a stop requested no request is sent (``StopRequested`` is raised before
+        the first attempt) and no retry or retry wait is started (the last failed fetch is
+        returned as it is).
         """
-        if self._requests_made > 0:
-            self._sleep(self._settings.request_delay)
+        if self._should_stop() or (
+            self._requests_made > 0 and self._wait(self._settings.request_delay)
+        ):
+            raise StopRequested
         attempts = 0
         transient_retries = 0
         rate_limit_retried = False
@@ -140,12 +167,14 @@ class WbClient:
                 fetch.status_code is not None and 500 <= fetch.status_code < 600
             )
             if transient and transient_retries < len(RETRY_BACKOFF):
-                self._sleep(RETRY_BACKOFF[transient_retries])
+                if self._wait(RETRY_BACKOFF[transient_retries]):
+                    return fetch
                 transient_retries += 1
                 continue
             if fetch.status_code == 429 and not rate_limit_retried:
                 wait = parse_retry_after(fetch.retry_after, self._now())
-                self._sleep(min(DEFAULT_RETRY_AFTER if wait is None else wait, RETRY_AFTER_CAP))
+                if self._wait(min(DEFAULT_RETRY_AFTER if wait is None else wait, RETRY_AFTER_CAP)):
+                    return fetch
                 rate_limit_retried = True
                 continue
             return fetch

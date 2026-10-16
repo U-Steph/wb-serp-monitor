@@ -48,8 +48,10 @@ services:
     <<: *wbmon
     command: ["wbmon", "scheduler"]
     restart: unless-stopped
-    # The scheduler waits up to 60 s for a running collect child on SIGTERM; the default 10 s would SIGKILL it.
-    stop_grace_period: 90s
+    # On SIGTERM the scheduler forwards SIGTERM and waits scheduler.STOP_GRACE_S (120 s: the longest request
+    # already on the wire, wb_client.MAX_ATTEMPT_SECONDS = 100 s, plus 20 s to close the run) before SIGKILL.
+    # This grace must stay above that; tests/test_packaging_cross.py enforces the ordering.
+    stop_grace_period: 150s
     depends_on:
       init-db:
         condition: service_completed_successfully
