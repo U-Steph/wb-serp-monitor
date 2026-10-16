@@ -1,0 +1,41 @@
+# WB SERP Monitor: hourly collector without Docker (the same program as the compose `collector`).
+#
+# Install (see README.md, section "Развёртывание на сервере"):
+#   code in /opt/wb-serp-monitor, virtualenv in /opt/wb-serp-monitor/.venv (pip install ".[web]"),
+#   system user `wbserp` (named differently from the `wbmon` command on purpose),
+#   this file copied to /etc/systemd/system/, then `systemctl daemon-reload` and `enable --now`.
+# The database lives in /var/lib/wbmon (StateDirectory), the only writable path of this service.
+# Optional overrides of WBMON_* settings go to /etc/default/wbmon (KEY=value lines, no export).
+# `--db` pins the database path even if that file sets WBMON_DB_PATH.
+[Unit]
+Description=WB SERP Monitor: hourly collector (wbmon scheduler)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=wbserp
+Group=wbserp
+WorkingDirectory=/opt/wb-serp-monitor
+Environment=WBMON_DB_PATH=/var/lib/wbmon/wbmon.sqlite3
+Environment=TZ=Europe/Moscow
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+EnvironmentFile=-/etc/default/wbmon
+ExecStart=/opt/wb-serp-monitor/.venv/bin/wbmon scheduler --db /var/lib/wbmon/wbmon.sqlite3
+Restart=always
+RestartSec=10
+# Only the scheduler gets SIGTERM; it forwards it to its collect child and the child closes the run
+# honestly (exactly like `docker stop`). The window equals compose `stop_grace_period` (150 s).
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=150
+StateDirectory=wbmon
+StateDirectoryMode=0750
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
