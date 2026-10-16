@@ -60,19 +60,42 @@ def parse_csv(text: str) -> tuple[str, ...]:
     return tuple(queries)
 
 
+class DisallowedRedirect(httpx.HTTPError):
+    """The sheet export redirected somewhere other than Google."""
+
+
+def _is_google_url(url: httpx.URL) -> bool:
+    """True for an https URL on ``docs.google.com`` or ``*.googleusercontent.com``."""
+    host = url.host
+    return url.scheme == "https" and (
+        host == "docs.google.com" or host.endswith(".googleusercontent.com")
+    )
+
+
+def _check_redirect_target(response: httpx.Response) -> None:
+    """Response hook: refuse to follow a redirect that leaves Google (checked before following)."""
+    if not response.has_redirect_location:
+        return
+    target = response.request.url.join(response.headers["location"])
+    if not _is_google_url(target):
+        raise DisallowedRedirect(f"sheet redirected outside Google: {target.host or '-'}")
+
+
 def make_sheet_client(
     settings: Settings, *, transport: httpx.BaseTransport | None = None
 ) -> httpx.Client:
     """Build the short-lived client for the Google Sheet export (separate from the WB client).
 
     Redirects are followed here only (docs.google.com answers with a redirect to
-    googleusercontent.com); cookies are rejected and the environment is ignored.
+    googleusercontent.com) and only while they stay on Google over https; cookies are rejected
+    and the environment is ignored.
     """
     client = httpx.Client(
         headers={"User-Agent": settings.user_agent, "Accept": "text/csv"},
         timeout=httpx.Timeout(15.0, connect=10.0),
         follow_redirects=True,
         max_redirects=5,
+        event_hooks={"response": [_check_redirect_target]},
         trust_env=False,
         transport=transport,
     )

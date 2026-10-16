@@ -381,3 +381,25 @@ def test_oversized_sheet_is_cut_off_while_streaming():
 
     assert (result.source, result.reason) == ("bundled", "too_large")
     assert chunks_read <= SHEET_MAX_BYTES // 100_000 + 2
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "https://evil.example.com/export.csv",
+        "http://docs.google.com/export.csv",  # downgrade to plain http
+        "https://docs.google.com.evil.example/export.csv",
+        "https://evilgoogleusercontent.com/export.csv",  # not a *.googleusercontent.com subdomain
+        "//evil.example.com/export.csv",
+    ],
+)
+def test_redirect_leaving_google_is_refused_and_not_followed(location):
+    """IN-08: sheet redirects may only stay on docs.google.com / *.googleusercontent.com (https)."""
+    redirect = httpx.Response(302, headers={"location": location})
+
+    result, fake = load([redirect, csv_response(numbered(60))])
+
+    assert result.source == "bundled"
+    assert result.reason == "fetch_failed:DisallowedRedirect"
+    assert result.texts == bundled()
+    assert len(fake.requests) == 1  # the second hop was never requested

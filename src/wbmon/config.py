@@ -92,9 +92,11 @@ class Settings:
         if not low <= self.top_n <= high:
             raise ConfigError(f"WBMON_TOP_N: must be between {low} and {high}, got {self.top_n}")
         try:
-            int(self.dest)
+            dest = str(int(self.dest))
         except (TypeError, ValueError):
             raise ConfigError(f"WBMON_DEST: must be an integer, got {self.dest!r}") from None
+        # int() tolerates " 5 ", "+5" and "1_0"; send and store the canonical form instead
+        object.__setattr__(self, "dest", dest)
         _check_url("WBMON_SEARCH_URL", self.search_url)
         _check_url("WBMON_SHEET_CSV_URL", self.sheet_csv_url)
         if not math.isfinite(self.request_delay) or self.request_delay < _MIN_REQUEST_DELAY:

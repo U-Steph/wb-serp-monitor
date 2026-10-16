@@ -471,3 +471,21 @@ def test_record_query_rejects_rows_on_failed_status(tmp_path):
 def test_parse_slot_out_of_range_is_a_value_error(text):
     with pytest.raises(ValueError, match="UTC range"):
         parse_slot(text)
+
+
+@pytest.mark.parametrize(
+    ("raw", "canonical"),
+    [(" 5 ", "5"), ("+5", "5"), ("1_0", "10"), ("-1257786", "-1257786"), ("-0", "0")],
+)
+def test_dest_is_normalised_to_a_canonical_integer_string(raw, canonical):
+    """IN-08: int() accepts these, but the raw text used to be sent and stored as given."""
+    s = Settings.from_env({"WBMON_DEST": raw})
+    assert s.dest == canonical
+    assert s.search_params("q", 1)["dest"] == canonical
+    assert f'"dest": "{canonical}"' in s.params_json()
+    assert s.with_overrides(dest=f" {canonical} ").dest == canonical
+
+
+def test_non_integer_dest_is_still_rejected():
+    with pytest.raises(ConfigError, match="WBMON_DEST"):
+        Settings.from_env({"WBMON_DEST": "moscow"})

@@ -121,3 +121,16 @@ def test_probe_uses_single_request_without_retry_flag():
     from factories import SRC_DIR
 
     assert "retry=False" in (SRC_DIR / "cli.py").read_text(encoding="utf-8")
+
+
+def test_blank_probe_query_is_a_usage_error_and_sends_nothing(capsys):
+    """IN-08: ``--query ""`` used to send an empty query because the check was ``is not None``."""
+    for blank in ("", "   "):
+        fake = FakeWB()
+
+        code, out, sleep = run_probe(capsys, fake, argv=("probe", "--query", blank))
+
+        assert code == 2
+        assert fake.requests == []
+        assert out == ""
+    assert_nothing_written()

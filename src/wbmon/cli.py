@@ -44,6 +44,13 @@ def _positive_int(text: str) -> int:
     return value
 
 
+def _non_blank(text: str) -> str:
+    """argparse type: a query text with at least one non-whitespace character."""
+    if not text.strip():
+        raise argparse.ArgumentTypeError("must not be empty")
+    return text
+
+
 def _slot(text: str) -> str:
     """argparse type: an aware ISO-8601 time normalised to its hourly slot (``...:00:00Z``)."""
     try:
@@ -83,7 +90,9 @@ def build_parser() -> argparse.ArgumentParser:
     probe = sub.add_parser(
         "probe", help="send one page-1 request, print the classified outcome, write nothing"
     )
-    probe.add_argument("--query", help="query text (default: the first bundled query)")
+    probe.add_argument(
+        "--query", type=_non_blank, help="query text (default: the first bundled query)"
+    )
     return parser
 
 
