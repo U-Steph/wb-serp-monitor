@@ -20,6 +20,8 @@ product was not found — never invented positions).
 ### Validated
 
 - ✓ Collection core: sheet/bundled query source with byte-exact wording, plain-httpx WB client with honest outcome classification, multi-page top-N in SERP order, normalizer (price/rating/reviews/delivery/seller/ads, NULL for unknown), append-only SQLite with run log, lock/slot/abandon, breaker and deadline, CLI `init-db`/`collect`/`probe`, 598 offline tests on Python 3.11–3.14 — Phase 1 (QRY-01..04, COL-01..06, DATA-01..07, STOR-01..04, SCHED-01, SCHED-04, OPS-04)
+- ✓ Unattended operation: hourly MSK scheduler (subprocess per run, lock + unique slot, 45-min catch-up, no back-fill, heartbeat + healthcheck, graceful SIGTERM), Docker image + compose (init-db/collector/web, optional Caddy TLS), Makefile, systemd units — Phase 2 (SCHED-02, SCHED-03, OPS-01, OPS-02)
+- ✓ Russian read-only Streamlit UI: freshness/heartbeat header, honest position chart (gaps, failed-run bands, ad markers), characteristics/history tables, Excel-safe CSV, «Выдача» snapshot, run log with query×run heatmap, «О сервисе»; week-scale DB loaders < 0.1 s — Phase 3 (STOR-05, UI-01..UI-12)
 
 ### Active
 
@@ -158,4 +160,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-16 after Phase 1 (Collection Core)*
+*Last updated: 2026-10-16 after Phase 3 (Web UI)*

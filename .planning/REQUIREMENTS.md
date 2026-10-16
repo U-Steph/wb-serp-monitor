@@ -66,7 +66,7 @@ Sources: TZ (`TZ_Wildberries_short_2026.pdf`), `.planning/PROJECT.md`, `.plannin
 ### Deployment (OPS)
 
 - [x] **OPS-01**: One Docker image; `docker compose up -d` starts `init-db` (one-shot), `collector` (scheduler) and `web` (Streamlit) sharing one named volume; `restart: unless-stopped`; healthchecks; log rotation; Europe/Moscow scheduling with UTC storage; `tzdata` installed.
-- [x] **OPS-02**: The same project runs without Docker (venv + CLI) for local development; documented `.env.example` covers every setting (top_n, dest, delay, DB path, sheet URL, timezone).
+- [x] **OPS-02**: The same project runs without Docker (venv + CLI, Makefile, systemd units) for local development; every setting (top_n, dest, delay, DB path, sheet URL, timezone, compose variables) is documented with real defaults in the README «Конфигурация» table plus a dotenv block. *Amended 2026-10-16: a literal `.env.example` file was not created because the user's local permission rules deny `.env*` files; the README table replaces it.*
 - [ ] **OPS-03**: Deployed on a host where the UI is reachable by a public link; a go/no-go probe (`wbmon probe` / `collect --limit-queries 2`) records whether WB serves plain requests from that host.
 - [x] **OPS-04**: Test suite (pytest) runs offline with fixtures and temp DBs only (no live WB calls, no synthetic data in the real DB); CI-style command documented.
 
