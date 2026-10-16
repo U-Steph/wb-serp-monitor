@@ -282,8 +282,8 @@ def test_key_value_formatter_line():
 
 
 def test_error_classes_contract():
-    assert len(ERROR_CLASSES) == 19
-    assert {"circuit_open", "deadline", "db_write_failed"} <= ERROR_CLASSES
+    assert len(ERROR_CLASSES) == 20
+    assert {"circuit_open", "deadline", "db_write_failed", "terminated"} <= ERROR_CLASSES
 
 
 # --- normalizer, bundled loader, purity ----------------------------------------------------------

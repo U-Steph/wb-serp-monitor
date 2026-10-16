@@ -48,11 +48,18 @@ def run_once(
     sleep: Callable[[float], None] = time.sleep,
     now: Callable[[], datetime] = clock.utc_now,
     monotonic: Callable[[], float] = time.monotonic,
+    should_stop: Callable[[], bool] = lambda: False,
 ) -> int | None:
     """Perform one run and return its run id, or ``None`` when no run was created.
 
-    ``None`` means the run lock was busy (``lock_busy``) or the scheduler slot already has a run
-    (``slot_exists``); both are normal, logged outcomes and create nothing.
+    ``None`` means the run lock was busy (``lock_busy``), the scheduler slot already has a run
+    (``slot_exists``) or a stop was requested before the run row existed (``terminated``); all
+    are normal, logged outcomes and create nothing.
+
+    ``should_stop`` is polled before the run is created and at the top of every query iteration.
+    Once it returns true, every remaining query is recorded as ``error`` / ``terminated`` without
+    a request and the run is closed by the unchanged status derivation (D2-A1), so a SIGTERM
+    never leaves a run ``running``.
     """
     init_db(settings.db_path)
     with contextlib.ExitStack() as stack:
@@ -72,6 +79,9 @@ def run_once(
                 log_event("slot_exists", slot=slot_utc, run_id=existing)
                 return None
 
+        if should_stop():
+            log_event("terminated", phase="before_start")
+            return None
         query_set = load_queries(settings, transport=transport)
         log_event(
             "queries_loaded",
@@ -79,6 +89,9 @@ def run_once(
             count=len(query_set.texts),
             reason=query_set.reason,
         )
+        if should_stop():  # flipped while the query list was being fetched
+            log_event("terminated", phase="before_start")
+            return None
         texts = query_set.texts[:limit_queries] if limit_queries else query_set.texts
         query_ids = writer.upsert_queries(query_set.texts, clock.iso_z(now()))
         try:
@@ -117,6 +130,7 @@ def run_once(
                 sleep=sleep,
                 now=now,
                 monotonic=monotonic,
+                should_stop=should_stop,
             )
             status = writer.finish_run(run_id, clock.iso_z(now()))
         except BaseException as exc:
@@ -174,8 +188,9 @@ def _run_queries(
     sleep: Callable[[float], None],
     now: Callable[[], datetime],
     monotonic: Callable[[], float],
+    should_stop: Callable[[], bool],
 ) -> None:
-    """Process every query in order: collect, apply breaker/deadline, record, log."""
+    """Process every query in order: collect, apply stop/breaker/deadline, record, log."""
     tz = settings.tzinfo()
     with make_http_client(settings, transport=transport) as http:
         client = WbClient(http, settings, sleep=sleep, monotonic=monotonic, now=now)
@@ -184,9 +199,22 @@ def _run_queries(
         breaker_open = False
         deadline_logged = False
         consecutive_write_failures = 0
-        for text in texts:
+        terminated_logged = False
+        for index, text in enumerate(texts):
             collected = False
-            if monotonic() >= deadline_at:
+            if should_stop():  # checked first: a stop request outranks deadline and breaker
+                result = _synthetic_result(
+                    now, "error", "terminated", "SIGTERM received; no request sent"
+                )
+                if not terminated_logged:
+                    terminated_logged = True
+                    log_event(
+                        "terminated",
+                        level=logging.WARNING,
+                        run_id=run_id,
+                        remaining=len(texts) - index,
+                    )
+            elif monotonic() >= deadline_at:
                 result = _synthetic_result(
                     now,
                     "error",

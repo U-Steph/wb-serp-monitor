@@ -36,6 +36,7 @@ ERROR_CLASSES: frozenset[str] = frozenset(
         "deadline",
         "db_write_failed",
         "exception",
+        "terminated",
     }
 )
 
