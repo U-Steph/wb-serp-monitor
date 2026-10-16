@@ -284,3 +284,183 @@ def test_key_value_formatter_line():
 def test_error_classes_contract():
     assert len(ERROR_CLASSES) == 19
     assert {"circuit_open", "deadline", "db_write_failed"} <= ERROR_CLASSES
+
+
+# --- normalizer, bundled loader, purity ----------------------------------------------------------
+
+
+def test_extract_products_both_envelopes_and_misses():
+    from wbmon.normalize import extract_products
+
+    items = [{"id": 1}]
+    assert extract_products({"data": {"products": items}}) == items
+    assert extract_products({"products": items}) == items
+    assert extract_products({"data": {"products": None}}) is None
+    assert extract_products({"data": {}}) is None
+    assert extract_products([items]) is None
+    assert extract_products(None) is None
+
+
+def test_payload_shape_and_normquery():
+    from wbmon.normalize import extract_normquery, payload_shape
+
+    assert payload_shape({"data": {"products": []}}) == "data.products"
+    assert payload_shape({"products": []}) == "products"
+    assert payload_shape({"data": {"items": []}}) == "unknown"
+    assert extract_normquery({"metadata": {"normquery": "a b"}}) == "a b"
+    assert extract_normquery({"data": {"metadata": {"normquery": "c"}}}) == "c"
+    assert extract_normquery({"metadata": {}}) is None
+    assert extract_normquery([]) is None
+
+
+def test_normalize_product_unknown_stays_null():
+    from zoneinfo import ZoneInfo
+
+    from wbmon.normalize import normalize_product
+
+    tz = ZoneInfo("Europe/Moscow")
+    assert normalize_product({"name": "no id"}, position=1, collected_at="t", tz=tz) is None
+    assert normalize_product({"id": True}, position=1, collected_at="t", tz=tz) is None
+    assert normalize_product("junk", position=1, collected_at="t", tz=tz) is None
+    row = normalize_product(
+        {"id": "900000001", "name": "ТЕСТ", "brand": 5, "log": {"cpm": 0}},
+        position=3,
+        collected_at="2026-10-16T07:00:00Z",
+        tz=tz,
+    )
+    assert row is not None
+    assert (row.nm_id, row.position, row.name, row.brand, row.is_promoted) == (
+        900000001,
+        3,
+        "ТЕСТ",
+        None,
+        1,
+    )
+    unmapped = [
+        n
+        for n in OBSERVATION_COLUMNS
+        if n not in {"collected_at", "position", "nm_id", "name", "is_promoted"}
+    ]
+    assert all(getattr(row, name) is None for name in unmapped)
+    assert (
+        normalize_product({"id": 1, "log": {}}, position=1, collected_at="t", tz=tz).is_promoted
+        == 0
+    )
+
+
+def test_load_bundled_matches_resource_lines():
+    from importlib import resources
+
+    from wbmon.queries import load_bundled
+
+    raw = resources.files("wbmon").joinpath("data/queries_bundled.txt").read_bytes()
+    queries = load_bundled()
+    assert len(queries) == 70
+    assert queries == tuple(raw.decode("utf-8").split("\n")[:-1])
+
+
+def test_pure_modules_have_no_io_imports():
+    from factories import PURE_FORBIDDEN_IMPORTS, SRC_DIR, module_imports
+
+    for name in ("clock.py", "models.py", "normalize.py"):
+        assert not (module_imports(SRC_DIR / name) & PURE_FORBIDDEN_IMPORTS), name
+
+
+# --- HTTP client hygiene -------------------------------------------------------------------------
+
+
+def test_http_client_hygiene_and_no_cookie_replay():
+    import httpx
+
+    from wbmon.config import Settings
+    from wbmon.wb_client import make_http_client
+
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={}, headers={"set-cookie": "sid=abc; Path=/"})
+
+    client = make_http_client(Settings.from_env({}), transport=httpx.MockTransport(handler))
+    assert client.trust_env is False
+    assert client.follow_redirects is False
+    client.get("https://search.wb.ru/x")
+    client.get("https://search.wb.ru/x")
+    assert all("cookie" not in r.headers for r in seen)
+    assert client.headers["accept"] == "application/json"
+    assert client.headers["accept-language"] == "ru-RU,ru;q=0.9"
+    client.close()
+
+
+# --- writer --------------------------------------------------------------------------------------
+
+
+def _writer(tmp_path):
+    from wbmon.storage.writer import Writer
+
+    path = tmp_path / "w.sqlite3"
+    init_db(path)
+    con = connect_rw(path)
+    return con, Writer(con)
+
+
+def test_writer_run_status_derivation_and_append_only(tmp_path):
+    from wbmon.models import QueryResult
+    from wbmon.storage.reader import latest_run_id, run_summary
+    from wbmon.storage.writer import Writer  # noqa: F401
+
+    con, writer = _writer(tmp_path)
+    with contextlib.closing(con):
+        ids = writer.upsert_queries(["a", "b"], "2026-10-16T07:00:00Z")
+        assert sorted(ids) == ["a", "b"]
+        assert latest_run_id(con) is None
+        run = writer.start_run(
+            trigger="manual",
+            started_at="2026-10-16T07:00:00Z",
+            query_source="bundled",
+            params_json="{}",
+            top_n=5,
+            n_queries=2,
+        )
+        blocked = QueryResult(
+            status="blocked", started_at="t", duration_ms=1, error_class="http_403"
+        )
+        writer.record_query(run, ids["a"], blocked)
+        writer.record_query(run, ids["b"], blocked)
+        with pytest.raises(sqlite3.IntegrityError):
+            writer.record_query(run, ids["b"], blocked)  # a query is written once per run
+        assert writer.finish_run(run, "2026-10-16T07:01:00Z") == "blocked"
+        summary = run_summary(con, run)
+        assert summary is not None
+        assert (summary["status"], summary["n_blocked"], summary["n_items"]) == ("blocked", 2, 0)
+        assert latest_run_id(con) == run
+        assert run_summary(con, 999) is None
+        with pytest.raises(RuntimeError):
+            writer.finish_run(run, "2026-10-16T07:02:00Z")  # finished runs are not reopened
+
+
+def test_record_query_rejects_rows_on_failed_status(tmp_path):
+    from wbmon.models import ObservationRow, QueryResult
+
+    con, writer = _writer(tmp_path)
+    with contextlib.closing(con):
+        ids = writer.upsert_queries(["a"], "t")
+        run = writer.start_run(
+            trigger="manual",
+            started_at="t",
+            query_source="bundled",
+            params_json="{}",
+            top_n=5,
+            n_queries=1,
+        )
+        row = ObservationRow(
+            **{name: None for name in OBSERVATION_COLUMNS}
+            | {"collected_at": "t", "position": 1, "nm_id": 1, "is_promoted": 0}
+        )
+        with pytest.raises(ValueError):
+            writer.record_query(
+                run,
+                ids["a"],
+                QueryResult(status="error", started_at="t", duration_ms=0, observations=(row,)),
+            )
+        assert con.execute("SELECT COUNT(*) FROM run_queries").fetchone()[0] == 0
