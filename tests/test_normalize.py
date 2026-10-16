@@ -125,7 +125,7 @@ EXPECTED_MISSING = [
         logistics_rub=None,
         rating=None,
         feedbacks=0,
-        nm_rating=0.0,
+        nm_rating=None,
         nm_feedbacks=0,
         time1_h=None,
         time2_h=None,
@@ -316,7 +316,7 @@ def test_zero_sale_price_is_unpriced():
 def test_rating_zero_is_null_but_feedbacks_zero_is_kept():
     row = _row({"id": 1, "reviewRating": 0, "feedbacks": 0, "nmReviewRating": 0.0})
     assert row is not None
-    assert (row.rating, row.feedbacks, row.nm_rating) == (None, 0, 0.0)
+    assert (row.rating, row.feedbacks, row.nm_rating) == (None, 0, None)
 
 
 def test_legacy_integer_rating_key_is_ignored():
@@ -526,3 +526,21 @@ def test_odd_digit_string_in_one_field_does_not_discard_the_product():
     row = normalize_product(raw, position=1, collected_at=COLLECTED_AT, tz=MSK)
     assert row is not None
     assert (row.feedbacks, row.seller_id, row.total_quantity) == (None, None, 12)
+
+
+# ---------------------------------------------------- IN-01: nmReviewRating 0 means "no rating"
+
+
+def test_zero_nm_rating_is_null_like_zero_rating():
+    raw = {"id": 900000001, "reviewRating": 0, "nmReviewRating": 0.0, "nmFeedbacks": 0}
+    row = normalize_product(raw, position=1, collected_at=COLLECTED_AT, tz=MSK)
+    assert row is not None
+    assert row.rating is None
+    assert row.nm_rating is None
+    assert row.nm_feedbacks == 0  # a zero review count is a real value
+
+
+def test_nonzero_nm_rating_is_kept():
+    raw = {"id": 900000001, "nmReviewRating": 4.6}
+    row = normalize_product(raw, position=1, collected_at=COLLECTED_AT, tz=MSK)
+    assert row is not None and row.nm_rating == 4.6

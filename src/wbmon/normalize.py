@@ -217,6 +217,9 @@ def normalize_product(
     rating = to_float(raw.get("reviewRating"))
     if rating == 0:
         rating = None
+    nm_rating = to_float(raw.get("nmReviewRating"))
+    if nm_rating == 0:  # same WB convention as reviewRating: 0 means "no rating yet", not a score
+        nm_rating = None
     time1, time2 = _delivery_times(raw)
     hours = time1 + time2 if time1 is not None and time2 is not None else None
     if hours is not None and (time1 < 0 or time2 < 0 or hours > INT64_MAX):
@@ -237,7 +240,7 @@ def normalize_product(
         logistics_rub=logistics,
         rating=rating,
         feedbacks=to_int(raw.get("feedbacks")),
-        nm_rating=to_float(raw.get("nmReviewRating")),
+        nm_rating=nm_rating,
         nm_feedbacks=to_int(raw.get("nmFeedbacks")),
         time1_h=time1,
         time2_h=time2,
