@@ -11,7 +11,7 @@ dependencies = ["httpx>=0.28.1,<1", "tzdata"]
 
 [project.optional-dependencies]           # declared up front so later phases never edit this file concurrently
 web = ["streamlit>=1.66,<2", "plotly>=7.1,<8", "pandas>=3,<4"]
-dev = ["pytest>=9,<10", "ruff>=0.17,<0.18"]
+dev = ["pytest>=9,<10", "ruff>=0.17,<0.18", "pyyaml>=6,<7", "jsonschema>=4,<5"]
 
 [project.scripts]
 wbmon = "wbmon.cli:main"

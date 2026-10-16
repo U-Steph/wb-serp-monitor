@@ -9,8 +9,13 @@ Paths come from ``REPO_ROOT`` because the autouse ``_isolated`` fixture chdirs i
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
+import posixpath
 import re
+import shutil
+import subprocess
 import tomllib
 
 import pytest
@@ -20,6 +25,16 @@ from factories import REPO_ROOT
 DOCKERFILE = REPO_ROOT / "Dockerfile"
 DOCKERIGNORE = REPO_ROOT / ".dockerignore"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
+COMPOSE = REPO_ROOT / "compose.yaml"
+CADDYFILE = REPO_ROOT / "deploy" / "Caddyfile"
+
+# Vendored official Compose Specification schema (tests/data/compose-spec.json). Never edit it by
+# hand; to refresh, re-download it and update the pinned hash deliberately.
+#   source:    https://raw.githubusercontent.com/compose-spec/compose-spec/main/schema/compose-spec.json
+#   retrieved: 2026-10-16 (89,808 bytes, JSON Schema draft 2020-12)
+#   license:   Apache-2.0 (compose-spec/compose-spec)
+COMPOSE_SCHEMA = REPO_ROOT / "tests" / "data" / "compose-spec.json"
+COMPOSE_SCHEMA_SHA256 = "d61cc3df8c6e6a727043e84f3405c69ffd63d341f629db8480f1d2ee5405b10c"
 
 
 # ---------------------------------------------------------------------------------------------
@@ -159,3 +174,184 @@ def test_pyproject_has_no_file_the_allowlist_would_exclude():
     assert "readme" not in project
     assert "license-files" not in project
     assert not re.search(r"license\s*=\s*\{\s*file", text)
+
+
+# ---------------------------------------------------------------------------------------------
+# compose.yaml and deploy/Caddyfile
+# ---------------------------------------------------------------------------------------------
+
+ROLES = ("init-db", "collector", "web")
+_DEFAULT_RE = re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*:-([^}]*)\}")
+
+
+def resolve(value):
+    """Resolve ``${VAR:-default}`` to its default (compose interpolation without an environment)."""
+    return _DEFAULT_RE.sub(r"\1", value) if isinstance(value, str) else value
+
+
+def _seconds(duration: str) -> int:
+    match = re.fullmatch(r"(\d+)s", duration)
+    assert match, f"unsupported duration {duration!r}"
+    return int(match.group(1))
+
+
+@pytest.fixture(scope="module")
+def compose() -> dict:
+    import yaml  # dev dependency: a missing one must fail loudly, never skip
+
+    return yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+
+
+@pytest.fixture(scope="module")
+def schema() -> dict:
+    return json.loads(COMPOSE_SCHEMA.read_text(encoding="utf-8"))
+
+
+def test_vendored_schema_is_the_pinned_official_file():
+    assert hashlib.sha256(COMPOSE_SCHEMA.read_bytes()).hexdigest() == COMPOSE_SCHEMA_SHA256
+
+
+def test_compose_matches_the_official_schema(compose, schema):
+    from jsonschema.validators import validator_for
+
+    validator = validator_for(schema)(schema)
+    assert [e.message for e in validator.iter_errors(compose)] == []
+
+
+def test_schema_negative_control_rejects_a_typo(compose, schema):
+    from jsonschema.validators import validator_for
+
+    broken = copy.deepcopy(compose)
+    service = broken["services"]["collector"]
+    service["restart_polcy"] = service.pop("restart")
+    errors = list(validator_for(schema)(schema).iter_errors(broken))
+    assert errors, "the schema must reject an unknown service key"
+
+
+def test_compose_top_level(compose):
+    assert "version" not in compose
+    assert compose["name"] == "wb-serp-monitor"
+    assert set(compose["services"]) == {"init-db", "collector", "web", "caddy"}
+    assert compose["volumes"]["wbdata"] == {"name": "wbmon_data"}
+    assert "caddy_data" in compose["volumes"] and "caddy_config" in compose["volumes"]
+
+
+@pytest.mark.parametrize("role", ROLES)
+def test_role_shares_image_volume_environment_and_log_rotation(compose, role):
+    service = compose["services"][role]
+    assert service["build"]["context"] == "."
+    assert service["image"] == "wb-serp-monitor:local"
+    assert "wbdata:/data" in service["volumes"]  # read-write: WAL readers must create -shm
+    assert not any(str(v).endswith(":ro") for v in service["volumes"])
+    assert service["environment"]["WBMON_DB_PATH"] == "/data/wbmon.sqlite3"
+    assert service["environment"]["TZ"] == "Europe/Moscow"
+    assert service["env_file"] == [{"path": ".env", "required": False}]
+    assert service["logging"]["driver"] == "json-file"
+    assert service["logging"]["options"] == {"max-size": "10m", "max-file": "3"}
+    assert isinstance(service["command"], list)  # exec form: PID 1 receives SIGTERM
+
+
+def test_build_args_default_to_the_pinned_image_and_pypi(compose):
+    args = compose["services"]["collector"]["build"]["args"]
+    assert resolve(args["PYTHON_IMAGE"]) == "python:3.12-slim"
+    assert resolve(args["PIP_INDEX_URL"]) == "https://pypi.org/simple"
+
+
+def test_init_db_is_a_one_shot(compose):
+    service = compose["services"]["init-db"]
+    assert service["command"] == ["wbmon", "init-db"]
+    assert service["restart"] == "no"
+
+
+def test_collector_runs_the_scheduler_with_healthcheck_and_grace_period(compose):
+    service = compose["services"]["collector"]
+    assert service["command"] == ["wbmon", "scheduler"]
+    assert service["restart"] == "unless-stopped"
+    assert _seconds(service["stop_grace_period"]) >= 75  # > the scheduler's 60 s child wait
+    assert service["depends_on"] == {"init-db": {"condition": "service_completed_successfully"}}
+    health = service["healthcheck"]
+    assert health["test"] == ["CMD", "wbmon", "healthcheck", "--max-age", "180"]
+    assert (health["interval"], health["timeout"], health["retries"], health["start_period"]) == (
+        "60s",
+        "10s",
+        3,
+        "30s",
+    )
+
+
+def test_web_runs_streamlit_from_the_app_workdir(compose):
+    service = compose["services"]["web"]
+    assert service["command"] == [
+        "streamlit",
+        "run",
+        "/app/src/wbmon/ui/app.py",
+        "--server.address=0.0.0.0",
+        "--server.port=8501",
+        "--server.headless=true",
+        "--browser.gatherUsageStats=false",
+    ]
+    assert service["working_dir"] == "/app"
+    assert (
+        posixpath.join(service["working_dir"], service["command"][2]) == "/app/src/wbmon/ui/app.py"
+    )
+    assert service["restart"] == "unless-stopped"
+    assert service["depends_on"] == {"init-db": {"condition": "service_completed_successfully"}}
+    assert service["ports"] == ["${WEB_BIND:-0.0.0.0}:${WEB_PORT:-8501}:8501"]
+
+
+def test_web_healthcheck_probes_streamlit_on_loopback_without_running_it(compose):
+    health = compose["services"]["web"]["healthcheck"]
+    assert health["test"][:3] == ["CMD", "python", "-c"]
+    code = health["test"][3]
+    assert "127.0.0.1:8501/_stcore/health" in code
+    compile(code, "hc", "exec")  # syntax check only; never executed
+
+
+def test_streamlit_config_reaches_the_container_working_directory(compose, dockerfile):
+    """Cross-phase contract (Phase 3): .streamlit/ is read from the web process's cwd."""
+    workdir = compose["services"]["web"]["working_dir"]
+    assert workdir == "/app"
+    assert ("WORKDIR", workdir) in dockerfile
+    assert ("COPY", ". /app") in dockerfile
+    assert "!.streamlit" in _ignore_rules()
+
+
+def test_caddy_is_an_optional_tls_front(compose):
+    service = compose["services"]["caddy"]
+    assert service["profiles"] == ["tls"]
+    assert resolve(service["image"]) == "caddy:2.11-alpine"
+    assert service["restart"] == "unless-stopped"
+    assert "web" in service["depends_on"]
+    assert resolve(service["environment"]["SITE_ADDRESS"]) == ":80"
+    for mount in (
+        "./deploy/Caddyfile:/etc/caddy/Caddyfile:ro",
+        "caddy_data:/data",
+        "caddy_config:/config",
+    ):
+        assert mount in service["volumes"]
+
+
+def test_caddyfile_proxies_to_streamlit():
+    text = CADDYFILE.read_text(encoding="utf-8")
+    assert "{$SITE_ADDRESS}" in text
+    assert "reverse_proxy web:8501" in text
+
+
+def test_compose_text_has_no_latest_tag_and_documents_the_compose_version():
+    text = COMPOSE.read_text(encoding="utf-8")
+    assert ":latest" not in text
+    env_file_index = text.index("env_file:")
+    assert "2.24" in text[max(0, env_file_index - 400) : env_file_index]
+
+
+@pytest.mark.skipif(shutil.which("docker") is None, reason="docker is not installed")
+def test_docker_compose_config_accepts_the_file():
+    """Runs on CI runners that have Docker; ``config -q`` validates only, it builds nothing."""
+    result = subprocess.run(
+        ["docker", "compose", "-f", "compose.yaml", "config", "-q"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr

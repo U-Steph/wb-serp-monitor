@@ -1,0 +1,9 @@
+# TLS reverse proxy in front of Streamlit (compose profile `tls`).
+# SITE_ADDRESS (set in .env) chooses how the site is served:
+#   monitor.example.com        a real domain: automatic Let's Encrypt (A record -> this host, ports 80+443 open)
+#   203-0-113-5.sslip.io       <dashed-ip>.sslip.io: a trusted certificate with no DNS work
+#   :80                        plain HTTP on the bare IP (works, browsers show "not secure")
+# WebSocket upgrade (Streamlit /_stcore/stream) is automatic in Caddy 2.
+{$SITE_ADDRESS} {
+	reverse_proxy web:8501
+}

@@ -1,0 +1,116 @@
+# WB SERP Monitor - one `docker compose up -d` starts init-db, collector and web on one named volume.
+#
+#   docker compose up -d --build            init-db (one-shot), collector (hourly scheduler), web (Streamlit)
+#   docker compose --profile tls up -d      the same plus the Caddy TLS reverse proxy
+#                                           (or COMPOSE_PROFILES=tls in .env; set SITE_ADDRESS, and
+#                                           WEB_BIND=127.0.0.1 so Streamlit is not exposed next to Caddy)
+#
+# NEVER run `docker compose down -v`: it deletes the volume wbmon_data, i.e. the whole history.
+# `docker compose down` (what `make down` runs) keeps the volume.
+#
+# `web` needs src/wbmon/ui/app.py (Phase 3); until that file exists the container restarts in a loop.
+name: wb-serp-monitor
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-wbmon: &wbmon
+  build:
+    context: .
+    args:
+      PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim}
+      PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+  image: wb-serp-monitor:local
+  # Optional .env: the long syntax with `required: false` needs Docker Compose >= 2.24 (older versions
+  # fail to parse it). `make up` creates .env from .env.example anyway.
+  env_file:
+    - path: .env
+      required: false
+  # `environment` wins over env_file: a copied .env can never move the database off the named volume.
+  environment:
+    WBMON_DB_PATH: /data/wbmon.sqlite3
+    TZ: Europe/Moscow
+  # Read-write in every role: WAL readers must be able to create the -shm file (never mount it ":ro").
+  volumes:
+    - wbdata:/data
+  logging: *default-logging
+
+services:
+  init-db:
+    <<: *wbmon
+    command: ["wbmon", "init-db"]
+    restart: "no"
+
+  collector:
+    <<: *wbmon
+    command: ["wbmon", "scheduler"]
+    restart: unless-stopped
+    # The scheduler waits up to 60 s for a running collect child on SIGTERM; the default 10 s would SIGKILL it.
+    stop_grace_period: 90s
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wbmon", "healthcheck", "--max-age", "180"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  web:
+    <<: *wbmon
+    # Streamlit reads .streamlit/config.toml from its working directory (copied to /app by the Dockerfile).
+    working_dir: /app
+    command:
+      - streamlit
+      - run
+      - /app/src/wbmon/ui/app.py
+      - --server.address=0.0.0.0
+      - --server.port=8501
+      - --server.headless=true
+      - --browser.gatherUsageStats=false
+    restart: unless-stopped
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    # Public by default (a shareable link); set WEB_BIND=127.0.0.1 when the tls profile (Caddy) fronts it.
+    ports:
+      - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-8501}:8501"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=5).status == 200 else 1)"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2.11-alpine}
+    profiles: ["tls"]
+    restart: unless-stopped
+    depends_on:
+      - web
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging: *default-logging
+
+volumes:
+  wbdata:
+    # Fixed name: the history volume no longer depends on the checkout directory.
+    name: wbmon_data
+  caddy_data:
+  caddy_config:
