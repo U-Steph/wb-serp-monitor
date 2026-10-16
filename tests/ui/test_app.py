@@ -344,13 +344,16 @@ def test_streamlit_config_keys_resolve_and_hide_error_details():
         for key in values:
             st_config.get_option(f"{section}.{key}")  # raises on an unknown key
     assert config["client"]["showErrorDetails"] == "none"
+    # WR-03: the built-in dataframe export would bypass the CSV formula-injection guard
+    assert config["client"]["disableDataExport"] is True
 
 
 def test_streamlit_reads_the_theme_file_from_the_repo_root():
     script = (
         "from streamlit import config; "
         "print(config.get_option('client.showErrorDetails'), "
-        "config.get_option('theme.primaryColor'))"
+        "config.get_option('theme.primaryColor'), "
+        "config.get_option('client.disableDataExport'))"
     )
     proc = subprocess.run(
         [sys.executable, "-c", script],
@@ -360,7 +363,7 @@ def test_streamlit_reads_the_theme_file_from_the_repo_root():
         check=False,
     )
     assert proc.returncode == 0, proc.stderr
-    assert proc.stdout.split() == ["none", "#7B2CBF"]
+    assert proc.stdout.split() == ["none", "#7B2CBF", "True"]
 
 
 # ----------------------------------------------------------------------------- «Позиции» tab

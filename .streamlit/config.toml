@@ -27,6 +27,9 @@ chartCategoricalColors = ["#1F77B4", "#E8590C", "#2B8A3E", "#7048E8", "#C92A2A",
 toolbarMode = "viewer"
 # Public app: no tracebacks and no database path in the browser (details go to the server log).
 showErrorDetails = "none"
+# st.dataframe's own toolbar would export raw cell text (seller names, ...) as CSV / clipboard,
+# bypassing the formula-injection guard of the app's own «Скачать CSV» button.
+disableDataExport = true
 
 [browser]
 gatherUsageStats = false
