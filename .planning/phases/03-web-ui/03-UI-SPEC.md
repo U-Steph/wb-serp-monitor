@@ -582,7 +582,7 @@ The query label under the «Выдача» sub-header is an `st.caption` (theme 
 
 ### Heatmap glyph colours (UI-4)
 
-A Plotly heatmap takes a single text colour, so the in-cell glyphs are drawn as text-mode scatter overlays, one trace per colour, over the heatmap (`charts.GLYPH_COLORS`): white `#FFFFFF` on ok, blocked, rate_limited and error; ink `#1A1D21` for `~` on the amber partial fill. The overlays are `hoverinfo="skip"`, so the hover still comes from the heatmap cell. `fig.data[0]` is still the heatmap.
+A Plotly heatmap takes a single text colour, so the in-cell glyphs are drawn as text-mode scatter overlays, one trace per colour, over the heatmap (`charts.GLYPH_COLORS`): white `#FFFFFF` on ok, blocked, rate_limited and error; ink `#1A1D21` for `~` on the amber partial fill. The overlays are `hoverinfo="skip"`, so the hover still comes from the heatmap cell. `fig.data[0]` is still the heatmap. Because text overlays add autorange padding, both axes are pinned (`autorange=False` plus an explicit range) instead of `autorange="reversed"` (y: `[n_queries - 0.5, -0.5]`, first query on top; x: `[-0.5, n_runs - 0.5]`).
 
 ### Position chart legend (VIS-1)
 

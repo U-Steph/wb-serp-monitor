@@ -478,7 +478,10 @@ def test_heatmap_layout_follows_the_contract(mixed_heatmap):
     assert layout.xaxis.side == "top"
     assert layout.xaxis.tickangle == -90
     assert layout.xaxis.tickmode == "array"
-    assert layout.yaxis.autorange == "reversed"
+    # reversed, first query on top; explicit so the text overlays cannot add empty rows
+    assert layout.yaxis.autorange is False and layout.xaxis.autorange is False
+    assert list(layout.yaxis.range) == [2.5, -0.5]
+    assert list(layout.xaxis.range) == [-0.5, 5.5]
     assert layout.yaxis.tickmode == "array"
     assert layout.title.text is None
 

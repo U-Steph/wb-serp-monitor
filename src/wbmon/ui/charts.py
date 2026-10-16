@@ -379,8 +379,12 @@ def status_heatmap(runs: pd.DataFrame, matrix: pd.DataFrame, queries: pd.DataFra
         plot_bgcolor=HEATMAP_BACKGROUND,
         paper_bgcolor="#FFFFFF",
         font={**HEATMAP_FONT, "color": TEXT_COLOR},
+        # Explicit ranges: with autorange the text overlays add padding and leave empty rows of
+        # grey plot background above the first query (position 0 is at the top, reversed).
         xaxis={
             "side": "top",
+            "autorange": False,
+            "range": [-0.5, len(run_rows) - 0.5],
             "tickangle": -90,
             "tickmode": "array",
             "tickvals": list(range(len(run_rows))),
@@ -388,7 +392,8 @@ def status_heatmap(runs: pd.DataFrame, matrix: pd.DataFrame, queries: pd.DataFra
             "showgrid": False,
         },
         yaxis={
-            "autorange": "reversed",
+            "autorange": False,
+            "range": [len(query_rows) - 0.5, -0.5],
             "tickmode": "array",
             "tickvals": list(range(len(query_rows))),
             "ticktext": [_tick_label(int(q.sheet_order), str(q.text)) for q in query_rows],
