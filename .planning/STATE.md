@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: verifying
-stopped_at: "Completed 01-05-PLAN.md (full honest run: multi-page, breaker, deadline, lock/slot/abandon, CLI contract, CI)"
-last_updated: "2026-10-16T14:30:00.361Z"
+stopped_at: "Completed 02-01-PLAN.md (wbmon scheduler + healthcheck, heartbeat, signals)"
+last_updated: "2026-10-16T14:37:07.870Z"
 last_activity: 2026-10-16
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 10
-  completed_plans: 5
+  total_plans: 12
+  completed_plans: 6
   percent: 25
 ---
 
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-10-16)
 ## Current Position
 
 Phase: 02 of 4 (unattended operation packaging)
-Plan: Not started
-Status: Phase 1 plans complete, awaiting verification
+Plan: 02-01 complete (1 of 3 planned)
+Status: Phase 2 in progress; next 02-02
 Last activity: 2026-10-16
 
 Progress: [██████████] 100% of Phase 1 plans
@@ -58,6 +58,7 @@ Progress: [██████████] 100% of Phase 1 plans
 | Phase 01 P03 | 25min | 3 tasks | 7 files |
 | Phase 01 P04 | 25min | 3 tasks | 9 files |
 | Phase 01 P05 | 30min | 3 tasks | 8 files |
+| Phase 02 P01 | 40min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,7 @@ Recent decisions affecting current work:
 - [Phase 01-04]: Retry-After 0 honoured as 0 s; sheet rows de-duplicated before the 50..500 plausibility count
 - [Phase 01]: 01-05: breaker counts blocked/rate_limited only for queries that sent requests; deadline has priority over an open breaker
 - [Phase 01]: 01-05: pages_fetched is Pager.pages_seen (successful pages incl. the wrap/empty page that ended the SERP)
+- [Phase 02-01]: Scheduler supervises the collect child with Popen + 1 s poll (D2-A2), heartbeat every 30 s incl. during runs; healthcheck only ever exits 0 or 1
 
 ### Pending Todos
 
@@ -97,6 +99,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-16T14:14:37.491Z
-Stopped at: Completed 01-05-PLAN.md (full honest run: multi-page, breaker, deadline, lock/slot/abandon, CLI contract, CI)
+Last session: 2026-10-16T14:37:03.952Z
+Stopped at: Completed 02-01-PLAN.md (wbmon scheduler + healthcheck, heartbeat, signals)
 Resume file: None

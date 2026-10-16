@@ -99,7 +99,7 @@ Plans:
 
 Plans:
 
-- [ ] 02-01: TBD (to be created by /gsd-plan-phase 2)
+- [x] 02-01: TBD (to be created by /gsd-plan-phase 2)
 
 **Notes**:
 

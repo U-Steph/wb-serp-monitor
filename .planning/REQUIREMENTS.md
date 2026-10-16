@@ -44,8 +44,8 @@ Sources: TZ (`TZ_Wildberries_short_2026.pdf`), `.planning/PROJECT.md`, `.plannin
 ### Scheduling & operation (SCHED)
 
 - [x] **SCHED-01**: `wbmon collect` performs one full run (all queries) and exits; usable manually and by the scheduler.
-- [ ] **SCHED-02**: `wbmon scheduler` triggers a run every hour at :00 Europe/Moscow as a fresh subprocess, runs once at start if the current hourly slot has no run (45-min grace), never back-fills past hours, never overlaps runs (file lock + UNIQUE hourly slot).
-- [ ] **SCHED-03**: The scheduler survives failed runs and restarts (no manual intervention); a heartbeat/latest-run signal is exposed for healthchecks and the UI.
+- [x] **SCHED-02**: `wbmon scheduler` triggers a run every hour at :00 Europe/Moscow as a fresh subprocess, runs once at start if the current hourly slot has no run (45-min grace), never back-fills past hours, never overlaps runs (file lock + UNIQUE hourly slot).
+- [x] **SCHED-03**: The scheduler survives failed runs and restarts (no manual intervention); a heartbeat/latest-run signal is exposed for healthchecks and the UI.
 - [x] **SCHED-04**: Structured logs for every run and query (stdout), suitable for `docker compose logs`.
 
 ### Web UI (UI)
@@ -128,8 +128,8 @@ Which phases cover which requirements. Updated during roadmap creation (2026-10-
 | STOR-04 | Phase 1 | Complete |
 | STOR-05 | Phase 3 | Pending |
 | SCHED-01 | Phase 1 | Complete |
-| SCHED-02 | Phase 2 | Pending |
-| SCHED-03 | Phase 2 | Pending |
+| SCHED-02 | Phase 2 | Complete |
+| SCHED-03 | Phase 2 | Complete |
 | SCHED-04 | Phase 1 | Complete |
 | UI-01 | Phase 3 | Pending |
 | UI-02 | Phase 3 | Pending |

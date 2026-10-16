@@ -82,7 +82,7 @@ completed: 2026-10-16
 
 - `src/wbmon/health.py`, `schedule.py`, `signals.py`, `scheduler.py` - new runtime modules (stdlib only)
 - `src/wbmon/cli.py` - `scheduler` and `healthcheck` subparsers, `_positive_float`, healthcheck error mapping to exit 1
-- `tests/test_health.py` (33 cases), `test_schedule.py`, `test_signals.py`, `test_scheduler.py` (31 cases, 0.8 s), `test_scheduler_e2e.py`
+- `tests/test_health.py` (50 cases), `test_schedule.py`, `test_signals.py`, `test_scheduler.py` (31 cases, 0.8 s), `test_scheduler_e2e.py`
 
 ## Decisions Made
 
@@ -121,7 +121,7 @@ None. New surface is limited to the heartbeat file (threat T-02-05, mitigated: s
 
 ## Next Phase Readiness
 
-- Plan 02-02 (Docker/compose/Makefile/.env.example) can reference `wbmon scheduler` (exec-form, `stop_grace_period >= 75 s`, collector has handlers for SIGTERM and exits 0) and `wbmon healthcheck --max-age 180` (exit 0/1 only).
+- Plan 02-02 (Docker/compose/Makefile/.env.example) can reference `wbmon scheduler` (exec-form, `stop_grace_period >= 75 s`; the scheduler exits 0 on SIGTERM) and `wbmon healthcheck --max-age 180` (exit 0/1 only).
 - Phase 3 UI can read `<dirname(WBMON_DB_PATH)>/scheduler_heartbeat.json` (keys ts, pid, next_slot, last_slot, last_exit, version; `ts` ISO-Z).
 - Not done here by design (later plan): graceful SIGTERM inside `collect` (`should_stop`, `terminated` error class). Until then a SIGTERM forwarded to a running collect kills it with the default action; the scheduler's 60 s wait then returns quickly and the next collect start runs `abandon_stale_runs`.
 - No real WB/Google traffic and no `data/` directory were produced by any test; the only real scheduler process ran against a pre-seeded tmp DB.
