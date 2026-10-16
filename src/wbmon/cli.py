@@ -31,6 +31,7 @@ from wbmon.log import configure_logging, log_event
 from wbmon.normalize import extract_normquery, payload_shape
 from wbmon.orchestrator import run_once
 from wbmon.queries import load_bundled
+from wbmon.scheduler import run_scheduler
 from wbmon.storage.db import connect_ro
 from wbmon.storage.migrations import init_db
 from wbmon.storage.reader import run_summary
@@ -108,6 +109,11 @@ def build_parser() -> argparse.ArgumentParser:
     probe.add_argument(
         "--query", type=_non_blank, help="query text (default: the first bundled query)"
     )
+    scheduler = sub.add_parser(
+        "scheduler",
+        help="run forever: start `collect` as a fresh process at every top of the hour (MSK)",
+    )
+    scheduler.add_argument("--db", help="database path (default: WBMON_DB_PATH)")
     health = sub.add_parser(
         "healthcheck",
         help="exit 0 if the scheduler heartbeat is fresh, 1 otherwise (never 2)",
@@ -245,6 +251,8 @@ def main(argv: Sequence[str] | None = None, *, _transport=None, _sleep=None) -> 
             if run_id is not None:
                 _log_run_summary(settings.db_path, run_id)
             return 0
+        if args.command == "scheduler":
+            return run_scheduler(settings)
         raise ConfigError(f"unknown command {args.command!r}")
     except ConfigError as exc:
         print(f"wbmon: configuration error: {exc}", file=sys.stderr)
