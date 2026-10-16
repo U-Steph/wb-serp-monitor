@@ -101,17 +101,66 @@ Deferred — mention in the write-up only.
 
 ## Traceability
 
-Which phases cover which requirements. Updated during roadmap creation.
+Which phases cover which requirements. Updated during roadmap creation (2026-10-16).
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (filled by roadmapper) | | |
+| QRY-01 | Phase 1 | Pending |
+| QRY-02 | Phase 1 | Pending |
+| QRY-03 | Phase 1 | Pending |
+| QRY-04 | Phase 1 | Pending |
+| COL-01 | Phase 1 | Pending |
+| COL-02 | Phase 1 | Pending |
+| COL-03 | Phase 1 | Pending |
+| COL-04 | Phase 1 | Pending |
+| COL-05 | Phase 1 | Pending |
+| COL-06 | Phase 1 | Pending |
+| DATA-01 | Phase 1 | Pending |
+| DATA-02 | Phase 1 | Pending |
+| DATA-03 | Phase 1 | Pending |
+| DATA-04 | Phase 1 | Pending |
+| DATA-05 | Phase 1 | Pending |
+| DATA-06 | Phase 1 | Pending |
+| DATA-07 | Phase 1 | Pending |
+| STOR-01 | Phase 1 | Pending |
+| STOR-02 | Phase 1 | Pending |
+| STOR-03 | Phase 1 | Pending |
+| STOR-04 | Phase 1 | Pending |
+| STOR-05 | Phase 3 | Pending |
+| SCHED-01 | Phase 1 | Pending |
+| SCHED-02 | Phase 2 | Pending |
+| SCHED-03 | Phase 2 | Pending |
+| SCHED-04 | Phase 1 | Pending |
+| UI-01 | Phase 3 | Pending |
+| UI-02 | Phase 3 | Pending |
+| UI-03 | Phase 3 | Pending |
+| UI-04 | Phase 3 | Pending |
+| UI-05 | Phase 3 | Pending |
+| UI-06 | Phase 3 | Pending |
+| UI-07 | Phase 3 | Pending |
+| UI-08 | Phase 3 | Pending |
+| UI-09 | Phase 3 | Pending |
+| UI-10 | Phase 3 | Pending |
+| UI-11 | Phase 3 | Pending |
+| UI-12 | Phase 3 | Pending |
+| OPS-01 | Phase 2 | Pending |
+| OPS-02 | Phase 2 | Pending |
+| OPS-03 | Phase 4 | Pending |
+| OPS-04 | Phase 1 | Pending |
+| DOC-01 | Phase 4 | Pending |
+| DOC-02 | Phase 4 | Pending |
+| DOC-03 | Phase 4 | Pending |
 
 **Coverage:**
 - v1 requirements: 45 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 45
+- Mapped to phases: 45 (Phase 1: 24, Phase 2: 4, Phase 3: 13, Phase 4: 4)
+- Unmapped: 0
+
+**Notes:**
+- STOR-03 (abandoned-run marking) is delivered in Phase 1 and exercised by scheduler restarts in Phase 2.
+- UI-01's "public link" clause is delivered by Phase 4 (OPS-03); Phase 3 owns the in-app behaviour.
+- OPS-04 starts in Phase 1 (offline pytest); later phases extend the suite under the same offline rule.
 
 ---
 *Requirements defined: 2026-10-16*
-*Last updated: 2026-10-16 after initial definition*
+*Last updated: 2026-10-16 after roadmap creation*
