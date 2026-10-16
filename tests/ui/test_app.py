@@ -297,6 +297,61 @@ def test_a_header_failure_does_not_hide_the_tabs(db_path, monkeypatch):
     assert at.sidebar.selectbox
 
 
+# ------------------------------------------------------------------------- spacing (UI-SPEC)
+
+
+def gap_of(node) -> str | None:
+    """``'24px'`` / ``'MEDIUM'`` / ``'XSMALL'`` of a flex container block, None for other nodes."""
+    proto = getattr(node, "proto", None)
+    if (
+        proto is None
+        or not hasattr(proto, "flex_container")
+        or not proto.HasField("flex_container")
+    ):
+        return None
+    cfg = proto.flex_container.gap_config
+    which = cfg.WhichOneof("gap_spec")
+    if which == "pixel_gap":
+        return f"{cfg.pixel_gap}px"
+    if which == "gap_size":
+        return (
+            cfg.DESCRIPTOR.fields_by_name["gap_size"].enum_type.values_by_number[cfg.gap_size].name
+        )
+    return None
+
+
+def kinds(node) -> list[str]:
+    return [type(c).__name__ for c in node.children.values()]
+
+
+def test_spacing_tokens_of_the_ui_spec_are_applied(db_path):
+    """UI-1: 24 px header -> tabs and chart -> table, 32 px between blocks, 8 px in groups."""
+    scenario_mixed(db_path)
+    at = run_app()
+    assert not at.exception
+    # header block -> tabs: a 24 px container holds the header and the tab container
+    wrapper = next(c for c in at.main.children.values() if gap_of(c) == "24px")
+    assert "Tab" not in kinds(wrapper) and len(wrapper.children) == 2
+    assert [c.type for c in wrapper.children.values()][-1] == "tab_container"
+    # positions tab: 32 px between the picker, the chart/table group and the history
+    positions = wrapper.children[1].children[0]
+    major = next(c for c in positions.children.values() if gap_of(c) == "MEDIUM")
+    assert kinds(major) == ["Block", "Block", "Expander"]
+    picker, chart_group, _history = major.children.values()
+    assert any(type(c).__name__ == "Multiselect" for c in picker.children.values())
+    # chart -> the table below it: 24 px
+    assert gap_of(chart_group) == "24px"
+    chart_block, table_block = chart_group.children.values()
+    assert "UnknownElement" in kinds(chart_block)  # the plotly chart
+    assert "Dataframe" in kinds(table_block)
+    # sidebar: period + default N share an 8 px group; the totals lines are 8 px apart
+    groups = [c for c in at.sidebar.children.values() if gap_of(c) == "XSMALL"]
+    assert len(groups) == 2
+    assert kinds(groups[0]) == ["ButtonGroup", "NumberInput"]
+    assert kinds(groups[1]) == ["Caption"] * 5
+    assert groups[1].proto.flex_container.border is True
+
+
 # ---------------------------------------------------------------- cache invalidation, read-only
 
 

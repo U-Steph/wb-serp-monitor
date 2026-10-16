@@ -20,6 +20,11 @@ from wbmon.ui import charts, data, series, texts
 
 logger = logging.getLogger("wbmon.ui")
 
+# UI-SPEC spacing scale (UI-1). md (16 px, "small") is Streamlit's default and is left implicit.
+GAP_SM = "xsmall"  # 8 px: controls of one group, sidebar totals lines
+GAP_LG = 24  # px: header block -> tabs, chart -> the table below it
+GAP_XL = "medium"  # 32 px: major blocks inside a tab
+
 _COUNT_COLUMNS = ("Успешных", "Частичных", "Заблок.", "Ошибок", "Товаров сохранено")
 
 
@@ -82,26 +87,27 @@ def render_sidebar_filters(queries: pd.DataFrame) -> tuple[Mapping | None, str, 
                 "sheet_order": int(row["sheet_order"]),
                 "text": str(row["text"]),
             }
-        # A deselected segment returns None: it means "all time" (UI-SPEC refinement).
-        period = (
-            st.segmented_control(
-                texts.PERIOD_LABEL,
-                texts.PERIOD_OPTIONS,
-                default=texts.PERIOD_ALL,
-                required=True,
-                key="period",
+        with st.container(gap=GAP_SM):  # period + default N are one control group (8 px)
+            # A deselected segment returns None: it means "all time" (UI-SPEC refinement).
+            period = (
+                st.segmented_control(
+                    texts.PERIOD_LABEL,
+                    texts.PERIOD_OPTIONS,
+                    default=texts.PERIOD_ALL,
+                    required=True,
+                    key="period",
+                )
+                or texts.PERIOD_ALL
             )
-            or texts.PERIOD_ALL
-        )
-        n = st.number_input(
-            texts.TOPN_LABEL,
-            min_value=1,
-            max_value=20,
-            value=5,
-            step=1,
-            help=texts.TOPN_HELP,
-            key="topn",
-        )
+            n = st.number_input(
+                texts.TOPN_LABEL,
+                min_value=1,
+                max_value=20,
+                value=5,
+                step=1,
+                help=texts.TOPN_HELP,
+                key="topn",
+            )
     return chosen, str(period), int(n)
 
 
@@ -109,7 +115,7 @@ def render_sidebar_totals(overview: Mapping) -> None:
     """The five totals under a divider, below the filters."""
     with st.sidebar:
         st.divider()
-        with st.container(border=True):
+        with st.container(border=True, gap=GAP_SM):
             for line in series.totals_lines(overview):
                 st.caption(line)
 
@@ -162,14 +168,14 @@ def render_query_attempts(path: str, ver: data.DataVersion, query_id: int) -> No
     )
 
 
-def render_product_tables(
+def render_characteristics(
     points: pd.DataFrame,
     selected: list[int],
     options: pd.DataFrame,
     query: Mapping,
     now: datetime,
 ) -> None:
-    """Characteristics, the CSV export and the history expander for the selected period.
+    """Characteristics table and the CSV export for the selected period.
 
     Names, brands and sellers reach the page only inside dataframe cells (never as markdown).
     """
@@ -196,6 +202,10 @@ def render_product_tables(
         key=f"csv_{query['query_id']}",
     )
     st.caption(texts.CSV_CAPTION)
+
+
+def render_history(points: pd.DataFrame) -> None:
+    """The collapsed history expander: every observation of the selection, newest first."""
     with st.expander(texts.HISTORY_EXPANDER):
         st.dataframe(
             series.history_frame(points),
@@ -216,7 +226,11 @@ def render_positions_tab(
     n: int,
     top_n: int,
 ) -> None:
-    """Product picker, the honest position chart, its captions, the tables and the CSV."""
+    """Product picker, the honest position chart, its captions, the tables and the CSV.
+
+    Spacing follows the UI-SPEC scale: 32 px between the major blocks (picker, chart with its
+    table, history), 24 px between the chart block and the table under it.
+    """
     if not overview["n_runs"]:
         st.info(texts.BANNER_NO_RUNS)
         return
@@ -235,36 +249,50 @@ def render_positions_tab(
     ids = [int(i) for i in frame["nm_id"]]
     labels = dict(zip(ids, frame["label"], strict=True))
     top_ids = () if latest_run is None else data.load_top_ids(path, ver, latest_run, query_id, n)
-    if not ids:
-        st.info(texts.EMPTY_QUERY_NO_DATA)
-        render_query_attempts(path, ver, query_id)
-    selected = st.multiselect(
-        texts.PICKER_LABEL,
-        options=ids,
-        default=series.default_selection(top_ids, ids, n),
-        format_func=labels.__getitem__,
-        max_selections=series.MAX_SELECTED,
-        placeholder=texts.PICKER_PLACEHOLDER,
-        select_all=False,
-        disabled=not ids,
-        key=f"products_{query_id}_{n}",
-    )
-    if n > series.MAX_SELECTED:
-        st.caption(texts.PICKER_CAP_CAPTION)
-    if ids and not selected:
-        st.info(texts.EMPTY_NOTHING_SELECTED)
-    with st.spinner(texts.SPINNER):
-        obs = data.load_observations(path, ver, query_id, tuple(sorted(selected)), since)
-        points = series.build_points(grid, obs, selected)
-        bands = series.band_times(grid)
-        fig = charts.position_figure(
-            points, selected, bands, series.series_names(options), series.x_range(grid), top_n
-        )
-        st.plotly_chart(fig, width="stretch", config=charts.CHART_CONFIG)
-    st.caption(texts.CHART_CAPTION.format(top_n=top_n))
-    st.caption(texts.CHART_SUMMARY.format(k=len(selected), n=len(grid), u=len(bands)))
-    if ids:
-        render_product_tables(points, selected, options, query, clock.utc_now())
+    with st.container(gap=GAP_XL):
+        with st.container():
+            if not ids:
+                st.info(texts.EMPTY_QUERY_NO_DATA)
+                render_query_attempts(path, ver, query_id)
+            selected = st.multiselect(
+                texts.PICKER_LABEL,
+                options=ids,
+                default=series.default_selection(top_ids, ids, n),
+                format_func=labels.__getitem__,
+                max_selections=series.MAX_SELECTED,
+                placeholder=texts.PICKER_PLACEHOLDER,
+                select_all=False,
+                disabled=not ids,
+                key=f"products_{query_id}_{n}",
+            )
+            if n > series.MAX_SELECTED:
+                st.caption(texts.PICKER_CAP_CAPTION)
+            if ids and not selected:
+                st.info(texts.EMPTY_NOTHING_SELECTED)
+        with st.container(gap=GAP_LG):
+            with st.container():
+                with st.spinner(texts.SPINNER):
+                    obs = data.load_observations(
+                        path, ver, query_id, tuple(sorted(selected)), since
+                    )
+                    points = series.build_points(grid, obs, selected)
+                    bands = series.band_times(grid)
+                    fig = charts.position_figure(
+                        points,
+                        selected,
+                        bands,
+                        series.series_names(options),
+                        series.x_range(grid),
+                        top_n,
+                    )
+                    st.plotly_chart(fig, width="stretch", config=charts.CHART_CONFIG)
+                st.caption(texts.CHART_CAPTION.format(top_n=top_n))
+                st.caption(texts.CHART_SUMMARY.format(k=len(selected), n=len(grid), u=len(bands)))
+            if ids:
+                with st.container():
+                    render_characteristics(points, selected, options, query, clock.utc_now())
+        if ids:
+            render_history(points)
 
 
 def render_snapshot_tab(
@@ -414,12 +442,15 @@ def main() -> None:
         st.error(texts.ERROR_DB_READ)
         st.stop()
 
-    _guarded(render_header, overview, latest, blocked_http, settings)
+    # 24 px between the header block and the tabs (UI-SPEC lg); inside the header, 16 px.
+    with st.container(gap=GAP_LG):
+        with st.container():
+            _guarded(render_header, overview, latest, blocked_http, settings)
+        positions_tab, snapshot_tab, runlog_tab, about_tab = st.tabs(
+            [texts.TAB_POSITIONS, texts.TAB_SNAPSHOT, texts.TAB_RUNLOG, texts.TAB_ABOUT]
+        )
     query, period, n = render_sidebar_filters(queries)
     render_sidebar_totals(overview)
-    positions_tab, snapshot_tab, runlog_tab, about_tab = st.tabs(
-        [texts.TAB_POSITIONS, texts.TAB_SNAPSHOT, texts.TAB_RUNLOG, texts.TAB_ABOUT]
-    )
     top_n = int(overview["top_n_latest"] or settings.top_n)
     with positions_tab:
         _guarded(render_positions_tab, path, ver, overview, query, period, n, top_n)
