@@ -49,6 +49,10 @@ FORBIDDEN_SOURCE_TEXT = (
 )
 
 
+UI_DIR = SRC_DIR / "ui"
+UI_THIRD_PARTY = frozenset({"streamlit", "pandas", "plotly"})  # D3-A1: the read-only UI stack
+
+
 def _pyproject() -> tuple[str, dict]:
     text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     return text, tomllib.loads(text)
@@ -73,15 +77,25 @@ def test_no_circumvention_package_named_in_pyproject():
     assert [name for name in CIRCUMVENTION_DENYLIST if name in lowered] == []
 
 
-def test_third_party_imports_in_src_are_httpx_only():
-    third_party: set[str] = set()
-    for path in _src_files():
-        third_party |= {
+def _third_party(paths: list[Path]) -> set[str]:
+    names: set[str] = set()
+    for path in paths:
+        names |= {
             name
             for name in module_imports(path)
             if name not in sys.stdlib_module_names and name not in {"wbmon", ""}
         }
-    assert third_party <= {"httpx"}
+    return names
+
+
+def test_third_party_imports_in_src_are_httpx_only():
+    core = [path for path in _src_files() if not path.is_relative_to(UI_DIR)]
+    assert _third_party(core) <= {"httpx"}
+
+
+def test_ui_third_party_imports_are_streamlit_pandas_plotly_only():
+    ui = [path for path in _src_files() if path.is_relative_to(UI_DIR)]
+    assert _third_party(ui) <= UI_THIRD_PARTY
 
 
 @pytest.mark.parametrize("needle", FORBIDDEN_SOURCE_TEXT)
