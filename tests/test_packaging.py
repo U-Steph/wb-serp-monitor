@@ -392,6 +392,43 @@ def test_web_healthcheck_probes_streamlit_on_loopback_without_running_it(compose
     compile(code, "hc", "exec")  # syntax check only; never executed
 
 
+def test_web_healthcheck_ignores_proxy_environment_and_reports_health(compose, tmp_path):
+    """IN-06: the loopback probe must not go through HTTP_PROXY from a copied .env."""
+    import http.server
+    import os
+    import sys
+    import threading
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200 if self.path == "/_stcore/health" else 404)
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        code = compose["services"]["web"]["healthcheck"]["test"][3].replace(
+            "127.0.0.1:8501", f"127.0.0.1:{server.server_port}"
+        )
+        env = {
+            **os.environ,
+            "HTTP_PROXY": "http://127.0.0.1:9",
+            "http_proxy": "http://127.0.0.1:9",
+            "NO_PROXY": "",
+            "no_proxy": "",
+        }
+        result = subprocess.run(
+            [sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=30
+        )
+    finally:
+        server.shutdown()
+    assert result.returncode == 0, result.stderr
+
+
 def test_streamlit_config_reaches_the_container_working_directory(compose, dockerfile):
     """Cross-phase contract (Phase 3): .streamlit/ is read from the web process's cwd."""
     workdir = compose["services"]["web"]["working_dir"]
@@ -501,6 +538,7 @@ def test_makefile_has_every_target_phony_and_documented():
 
 def test_makefile_local_targets():
     assert any("-m venv" in line for line in _recipe("install"))
+    assert any("version_info >= (3, 11)" in line for line in _recipe("install"))
     assert any('pip install -e ".[dev,web]"' in line for line in _recipe("install"))
     assert any("-m pytest" in line for line in _recipe("test"))
     assert _recipe("lint") == ["$(VENV)/bin/ruff check src tests"]

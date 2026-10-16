@@ -27,6 +27,7 @@ help:  ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/'
 
 install:  ## venv + editable install with dev and web extras
+	@python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else "wbmon needs Python 3.11 or newer")'
 	python3 -m venv $(VENV)
 	$(PY) -m pip install -e ".[dev,web]"
 
