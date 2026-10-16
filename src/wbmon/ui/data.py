@@ -345,10 +345,18 @@ def load_snapshot_raw(path: str, run_id: int, query_id: int) -> pd.DataFrame:
 def load_status_matrix_raw(
     path: str, n_runs: int = HEATMAP_RUNS
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """The newest ``n_runs`` finished runs (newest first) and every query attempt inside them."""
+    """The newest ``n_runs`` finished runs (newest first) and every query attempt inside them.
+
+    Both statements run in one read transaction (one WAL snapshot): a run the collector commits
+    in between cannot shift the window and leave the oldest column falsely "not executed".
+    """
     params = {"n": int(n_runs)}
     with contextlib.closing(connect_ro(path)) as con:
-        return _df(con, HEATMAP_RUNS_SQL, params), _df(con, STATUS_MATRIX_SQL, params)
+        con.execute("BEGIN")
+        try:
+            return _df(con, HEATMAP_RUNS_SQL, params), _df(con, STATUS_MATRIX_SQL, params)
+        finally:
+            con.rollback()
 
 
 @st.cache_data(ttl=CACHE_TTL_S, max_entries=CACHE_MAX_ENTRIES, show_spinner=False)

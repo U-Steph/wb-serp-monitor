@@ -808,6 +808,37 @@ def test_status_matrix_opens_one_connection_and_closes_it(db_path, monkeypatch):
         opened[0].execute("SELECT 1")
 
 
+def test_status_matrix_runs_and_cells_come_from_one_snapshot(db_path, monkeypatch):
+    """WR-05: a run committed between the two statements must not shift the matrix window."""
+    scenario_mixed(db_path)
+    real = data.connect_ro
+    appended: list[int] = []
+
+    def spy(path):
+        con = real(path)
+
+        def trace(sql: str) -> None:
+            # fires when the second statement (the matrix) starts: land a new finished run now
+            if "FROM run_queries rq" in sql and not appended:
+                started = iso_z(utc_now() - timedelta(minutes=1))
+                spec = RunSpec(
+                    started,
+                    {text: ok_result(started, Q2_IDS) for text in (Q1, Q2, Q3)},
+                    trigger="manual",
+                    n_queries=3,
+                )
+                appended.append(append_run(path, spec))
+
+        con.set_trace_callback(trace)
+        return con
+
+    monkeypatch.setattr(data, "connect_ro", spy)
+    runs, matrix = data.load_status_matrix_raw(str(db_path), n_runs=5)
+    assert appended, "the concurrent writer did not run"
+    assert set(matrix["run_id"]) == set(runs["run_id"])
+    assert len(runs) == 5
+
+
 def test_status_matrix_twin_is_keyed_on_the_data_version(db_path, monkeypatch):
     scenario_mixed(db_path)
     calls: list[int] = []
