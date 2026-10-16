@@ -1,0 +1,32 @@
+[theme]
+base = "light"
+primaryColor = "#7B2CBF"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F4F5F7"
+textColor = "#1A1D21"
+linkColor = "#6A1FA8"
+font = "sans-serif"
+baseFontSize = 16
+baseFontWeight = 400
+headingFontSizes = ["28px", "20px", "20px"]
+headingFontWeights = [600, 600, 600]
+metricValueFontSize = "20px"
+metricValueFontWeight = 600
+baseRadius = "6px"
+borderColor = "#DEE2E6"
+showWidgetBorder = true
+greenColor = "#2B8A3E"
+redColor = "#C92A2A"
+orangeColor = "#D9480F"
+yellowColor = "#F2C037"
+yellowTextColor = "#7A5B00"
+grayColor = "#6C757D"
+chartCategoricalColors = ["#1F77B4", "#E8590C", "#2B8A3E", "#7048E8", "#C92A2A", "#8C564B", "#D6336C", "#0C8599", "#5C940D", "#364FC7", "#B26A00", "#495057", "#A61E4D", "#087F5B", "#862E9C"]
+
+[client]
+toolbarMode = "viewer"
+# Public app: no tracebacks and no database path in the browser (details go to the server log).
+showErrorDetails = "none"
+
+[browser]
+gatherUsageStats = false

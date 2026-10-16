@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import contextlib
 import json
+import subprocess
+import sys
 import tomllib
 from datetime import timedelta
 from pathlib import Path
@@ -299,5 +301,22 @@ def test_streamlit_config_keys_resolve_and_hide_error_details():
     assert config
     for section, values in config.items():
         for key in values:
-            st_config.get_option(f"{section}.{key}")
-    assert st_config.get_option("client.showErrorDetails") == "none"
+            st_config.get_option(f"{section}.{key}")  # raises on an unknown key
+    assert config["client"]["showErrorDetails"] == "none"
+
+
+def test_streamlit_reads_the_theme_file_from_the_repo_root():
+    script = (
+        "from streamlit import config; "
+        "print(config.get_option('client.showErrorDetails'), "
+        "config.get_option('theme.primaryColor'))"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.split() == ["none", "#7B2CBF"]
