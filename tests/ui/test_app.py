@@ -954,6 +954,45 @@ def test_about_tab_has_the_methodology_and_the_repository_link(db_path):
     assert has(markdown, "может не соответствовать правилам площадки")
 
 
+def subtitle_caption(at: AppTest) -> str:
+    return next(c for c in caption_values(at) if "· Москва ·" in c)
+
+
+def test_header_and_about_use_the_real_query_count(db_path):
+    """IN-03: three queries in the sheet read '3 запроса', not a literal 70."""
+    scenario_mixed(db_path)
+    at = run_app()
+    assert not at.exception
+    assert subtitle_caption(at) == "3 запроса · топ-200 · Москва · сбор каждый час"
+    assert has(markdown_values(at), "(сейчас их 3)")
+    assert has(markdown_values(at), "(сейчас 3;")
+    assert has(markdown_values(at), "топ-200 по сортировке")
+    assert not has(markdown_values(at), "70")
+
+
+def test_header_ignores_queries_that_left_the_sheet_and_small_manual_runs(db_path):
+    """IN-03: the queries table keeps removed queries; the header follows the planned sheet."""
+    old, recent = (iso_z(utc_now() - timedelta(hours=h)) for h in (3, 2))
+    full = RunSpec(old, {text: ok_result(old, Q2_IDS) for text in (Q1, Q2, Q3)}, n_queries=3)
+    shrunk = RunSpec(
+        recent, {Q1: ok_result(recent, (A,)), Q2: ok_result(recent, Q2_IDS)}, n_queries=2
+    )
+    build_db(db_path, [full, shrunk])  # Q3 is still stored, but the latest regular run skipped it
+    at = run_app()
+    assert subtitle_caption(at).startswith("2 запроса ·")
+    manual = iso_z(utc_now() - timedelta(seconds=30))
+    small = RunSpec(manual, {Q1: ok_result(manual, (A,))}, trigger="manual", n_queries=1)
+    append_run(db_path, small)
+    at = run_app()
+    assert subtitle_caption(at).startswith("2 запроса ·")  # a one-query manual run is ignored
+
+
+def test_empty_database_header_falls_back_to_the_named_default(db_path):
+    init_db(db_path)
+    at = run_app()
+    assert subtitle_caption(at).startswith(f"{texts.DEFAULT_N_QUERIES} запросов ·")
+
+
 def _db_without_runs_table(path: Path) -> None:
     import sqlite3
 

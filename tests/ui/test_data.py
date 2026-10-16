@@ -114,6 +114,7 @@ def test_overview_of_the_mixed_history(db_path):
         "last_started": scalar(db_path, "SELECT started_at FROM runs WHERE id = ?", (last,)),
         "last_ok_finished": scalar(db_path, "SELECT finished_at FROM runs WHERE id = ?", (last,)),
         "n_queries": 3,
+        "sheet_size": 3,
         "top_n_latest": 200,
     }
     assert data.load_totals_raw(str(db_path)) == {"n_obs": 60, "n_products": 12}

@@ -52,6 +52,9 @@ LAST_OK_FINISHED_SQL = (
 )
 TOP_N_LATEST_SQL = "SELECT top_n FROM runs ORDER BY id DESC LIMIT 1"
 N_QUERIES_SQL = "SELECT COUNT(*) FROM queries"
+# The planned sheet size of the regular collection: the newest scheduler run if there is one (a
+# small manual run must not shrink the header), else the newest run of any kind.
+SHEET_SIZE_SQL = "SELECT n_queries FROM runs ORDER BY (trigger = 'scheduler') DESC, id DESC LIMIT 1"
 # Full scans of the biggest table: only ever run through the version-keyed ``load_totals`` (WR-06).
 # The two counts stay separate statements: combined they force a single, slower scan.
 N_OBS_SQL = "SELECT COUNT(*) FROM observations"
@@ -260,6 +263,7 @@ def load_overview_raw(path: str) -> dict:
             "last_started": last_started,
             "last_ok_finished": _scalar(con, LAST_OK_FINISHED_SQL),
             "n_queries": int(_scalar(con, N_QUERIES_SQL)),  # type: ignore[call-overload]
+            "sheet_size": _scalar(con, SHEET_SIZE_SQL),
             "top_n_latest": _scalar(con, TOP_N_LATEST_SQL),
         }
 

@@ -206,6 +206,14 @@ def status_counts(run_log: pd.DataFrame, last: int = 24) -> dict[str, int]:
     return {**known, **other}
 
 
+def sheet_size(overview: Mapping) -> int:
+    """How many queries the header claims: the planned size of the regular run, never a literal.
+
+    Falls back to the stored query count, then to ``texts.DEFAULT_N_QUERIES`` for an empty base.
+    """
+    return int(overview.get("sheet_size") or overview.get("n_queries") or texts.DEFAULT_N_QUERIES)
+
+
 def totals_lines(overview: Mapping) -> list[str]:
     """The five sidebar lines; numbers are ours, so the ``**`` emphasis is safe markdown."""
     first = to_msk_one(overview.get("first_started"))

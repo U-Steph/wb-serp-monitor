@@ -41,7 +41,7 @@ def render_header(
     """Subtitle, freshness badge, collector line and at most one status banner."""
     now = clock.utc_now()
     st.caption(
-        texts.subtitle(overview["n_queries"] or 70, overview["top_n_latest"] or settings.top_n)
+        texts.subtitle(series.sheet_size(overview), overview["top_n_latest"] or settings.top_n)
     )
     badge_col, collector_col = st.columns([3, 2], gap="small")
     with badge_col:
@@ -360,12 +360,12 @@ def render_runlog_tab(
     st.caption(texts.RUNLOG_FOOTER)
 
 
-def render_about_tab() -> None:
-    """The methodology page: our own copy, nothing from the database."""
+def render_about_tab(n_queries: int, top_n: int) -> None:
+    """The methodology page: our own copy plus two integers from the data, no database text."""
     st.subheader(texts.ABOUT_TITLE)
-    st.markdown(texts.ABOUT_INTRO)
+    st.markdown(texts.ABOUT_INTRO.format(n=n_queries))
     for title, body in (
-        (texts.ABOUT_COLLECTED_TITLE, texts.ABOUT_COLLECTED),
+        (texts.ABOUT_COLLECTED_TITLE, texts.ABOUT_COLLECTED.format(n=n_queries, top_n=top_n)),
         (texts.ABOUT_READING_TITLE, texts.ABOUT_READING),
         (texts.ABOUT_HONESTY_TITLE, texts.ABOUT_HONESTY),
         (texts.ABOUT_LIMITS_TITLE, texts.ABOUT_LIMITS),
@@ -389,7 +389,7 @@ def main() -> None:
 
     status = data.db_status(path)
     if status in ("missing", "uninitialized"):
-        st.caption(texts.subtitle(70, settings.top_n))
+        st.caption(texts.subtitle(texts.DEFAULT_N_QUERIES, settings.top_n))
         st.info(texts.EMPTY_NO_DB)
         st.stop()
     if status == "error":
@@ -417,15 +417,15 @@ def main() -> None:
     positions_tab, snapshot_tab, runlog_tab, about_tab = st.tabs(
         [texts.TAB_POSITIONS, texts.TAB_SNAPSHOT, texts.TAB_RUNLOG, texts.TAB_ABOUT]
     )
+    top_n = int(overview["top_n_latest"] or settings.top_n)
     with positions_tab:
-        top_n = int(overview["top_n_latest"] or settings.top_n)
         _guarded(render_positions_tab, path, ver, overview, query, period, n, top_n)
     with snapshot_tab:
         _guarded(render_snapshot_tab, path, ver, overview, query)
     with runlog_tab:
         _guarded(render_runlog_tab, path, ver, run_log, latest)
     with about_tab:
-        _guarded(render_about_tab)
+        _guarded(render_about_tab, series.sheet_size(overview), top_n)
 
 
 main()
