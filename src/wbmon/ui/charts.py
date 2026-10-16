@@ -52,6 +52,11 @@ HOVER_TEMPLATE = (
     "%{x|%d.%m.%Y %H:%M} МСК<br>ID %{customdata[0]}<br>Позиция %{y}"
     "<br>Цена %{customdata[1]}%{customdata[2]}<extra>%{fullData.name}</extra>"
 )
+# Legend entries get a fixed pixel width: left to auto-size, Plotly measures the text before the
+# web font has loaded and lays the entries on top of each other (VIS-1). 250 px fits
+# "ID 123456789 · BRAND" at 14 px plus the marker; longer names are cut so they cannot spill over.
+LEGEND_ENTRY_PX = 250
+LEGEND_NAME_CHARS = 32
 GRID_COLOR = "#E9ECEF"
 AXIS_COLOR = "#CED4DA"
 TEXT_COLOR = "#1A1D21"
@@ -93,6 +98,11 @@ def esc(text: object) -> str:
     if text is None or pd.isna(text):  # type: ignore[arg-type]
         return ""
     return html.escape(str(text), quote=False)
+
+
+def legend_name(name: str) -> str:
+    """The trace name cut to ``LEGEND_NAME_CHARS`` (with an ellipsis) to fit one legend entry."""
+    return name if len(name) <= LEGEND_NAME_CHARS else name[: LEGEND_NAME_CHARS - 1] + "…"
 
 
 def _tick_step(bottom: float) -> int:
@@ -169,7 +179,7 @@ def _product_trace(
         y=found,
         mode="lines+markers",
         connectgaps=False,
-        name=esc(name),
+        name=esc(legend_name(name)),
         line={"color": colour, "width": 2, "dash": "dash" if index >= DASH_FROM else "solid"},
         marker={
             "color": colour,
@@ -236,7 +246,15 @@ def position_figure(
             "linecolor": AXIS_COLOR,
         },
         yaxis=y_axis_spec(shown, top_n),
-        legend={"orientation": "h", "yanchor": "top", "y": -0.18, "xanchor": "left", "x": 0},
+        legend={
+            "orientation": "h",
+            "yanchor": "top",
+            "y": -0.18,
+            "xanchor": "left",
+            "x": 0,
+            "entrywidthmode": "pixels",
+            "entrywidth": LEGEND_ENTRY_PX,
+        },
         margin={"l": 64, "r": 16, "t": 16, "b": 88},
         font={
             "size": 14,

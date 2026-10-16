@@ -97,6 +97,15 @@ def test_y_axis_never_shows_a_tick_below_one(positions):
 # ------------------------------------------------------------------------------ traces
 
 
+def test_legend_names_are_cut_to_fit_one_fixed_width_entry():
+    short = "ID 900000101 · ТЕСТ-БРЕНД"
+    assert charts.legend_name(short) == short
+    long_name = "ID 900000101 · " + "Очень длинное название бренда " * 3
+    cut = charts.legend_name(long_name)
+    assert len(cut) == charts.LEGEND_NAME_CHARS and cut.endswith("…")
+    assert long_name.startswith(cut[:-1])
+
+
 def test_one_trace_per_product_and_two_legend_only_entries(mixed):
     _, grid, points = mixed
     fig = figure_of(grid, points)
@@ -251,6 +260,9 @@ def test_layout_follows_the_contract(mixed):
     assert layout.hovermode == "closest"
     assert layout.legend.orientation == "h"
     assert layout.legend.y == -0.18
+    # VIS-1: a fixed entry width, or Plotly stacks the entries before the web font is measured
+    assert layout.legend.entrywidthmode == "pixels"
+    assert layout.legend.entrywidth == charts.LEGEND_ENTRY_PX == 250
     assert (layout.margin.l, layout.margin.r, layout.margin.t, layout.margin.b) == (64, 16, 16, 88)
     assert layout.font.size == 14
     assert layout.font.color == "#1A1D21"
