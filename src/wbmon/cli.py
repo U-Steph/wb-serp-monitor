@@ -1,6 +1,10 @@
 """Command line interface: ``wbmon init-db``, ``wbmon collect`` and ``wbmon probe``.
 
-Exit codes: 0 success, 2 usage/config error, 1 crash.
+Exit codes: 0 success (``collect`` also exits 0 when every query was blocked, when another run
+holds the lock, and when the requested slot already has a run), 2 usage/config error, 1 crash.
+
+``collect`` is the entry point Phase 2's scheduler calls:
+``python -m wbmon collect --trigger scheduler --slot <ISO-8601 time>``.
 """
 
 from __future__ import annotations
@@ -15,6 +19,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from wbmon.classify import classify_page
+from wbmon.clock import parse_slot
 from wbmon.config import ConfigError, Settings
 from wbmon.log import configure_logging, log_event
 from wbmon.normalize import extract_normquery, payload_shape
@@ -37,6 +42,16 @@ def _positive_int(text: str) -> int:
     return value
 
 
+def _slot(text: str) -> str:
+    """argparse type: an aware ISO-8601 time normalised to its hourly slot (``...:00:00Z``)."""
+    try:
+        return parse_slot(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"not an ISO-8601 time with a UTC offset (e.g. 2026-10-16T12:00:00+03:00): {text!r}"
+        ) from None
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the argparse parser with its subcommands."""
     parser = argparse.ArgumentParser(
@@ -50,6 +65,18 @@ def build_parser() -> argparse.ArgumentParser:
     collect.add_argument("--top-n", type=_positive_int, help="positions per query (default 200)")
     collect.add_argument(
         "--limit-queries", type=_positive_int, help="only the first N queries (smoke runs)"
+    )
+    collect.add_argument(
+        "--trigger",
+        choices=("manual", "scheduler"),
+        default="manual",
+        help="what started the run (default manual); 'scheduler' requires --slot",
+    )
+    collect.add_argument(
+        "--slot",
+        type=_slot,
+        help="hourly slot as an ISO-8601 time with offset; floored to YYYY-MM-DDTHH:00:00Z. "
+        "A slot that already has a run is skipped (exit 0)",
     )
     probe = sub.add_parser(
         "probe", help="send one page-1 request, print the classified outcome, write nothing"
@@ -95,8 +122,11 @@ def _probe(settings: Settings, query: str | None, *, transport, sleep) -> int:
 def main(argv: Sequence[str] | None = None, *, _transport=None, _sleep=None) -> int:
     """Run the CLI. ``_transport`` and ``_sleep`` are test seams for offline runs."""
     _line_buffer_stdout()
+    parser = build_parser()
     try:
-        args = build_parser().parse_args(argv)
+        args = parser.parse_args(argv)
+        if args.command == "collect" and args.trigger == "scheduler" and args.slot is None:
+            parser.error("--trigger scheduler requires --slot")
     except SystemExit as exc:
         return exc.code if isinstance(exc.code, int) else 2
     try:
@@ -120,6 +150,8 @@ def main(argv: Sequence[str] | None = None, *, _transport=None, _sleep=None) -> 
             run_id = run_once(
                 settings,
                 limit_queries=args.limit_queries,
+                trigger=args.trigger,
+                slot_utc=args.slot,
                 transport=_transport,
                 sleep=_sleep or time.sleep,
             )
