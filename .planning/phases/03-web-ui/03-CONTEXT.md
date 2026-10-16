@@ -83,3 +83,15 @@ Phase 1 (executing now) defines the schema (tables `queries`, `runs`, `run_queri
 - Organic-rank chart mode, price-history chart, alerts, multi-region comparison — v2.
 
 </deferred>
+
+<addendum date="2026-10-16" source="orchestrator, after 03-RESEARCH.md">
+## Addendum — decisions on open questions raised by phase research (auto-accepted)
+
+- **D3-A1 Guardrail amendment (approved):** plan 03-01 Task 1 amends the Phase 1 test `tests/test_guardrails.py` minimally: modules under `src/wbmon/ui/` may import third-party `{streamlit, pandas, plotly}` only; everything else in `src/wbmon` stays httpx-only; the forbidden-text grep keeps applying to `ui/`. Until that lands, wave-1 plans verify with targeted pytest paths; the full-suite gate sits in the wave-2 plan.
+- **D3-A2 UI-SPEC implementation deviations (approved):** (a) failed-run bands are drawn as ONE `layout.shapes` list (not one `add_vrect` call per run — O(n²), 2.2 s for 168 runs); identical visual. (b) Y axis: reversed with the top bound at −0.5 (or `cliponaxis=False`) and explicit tick values starting at 1 so the position-1 marker is never clipped. Record both in the plan as deliberate deviations from 03-UI-SPEC.md.
+- **D3-A3 Streamlit cwd:** `.streamlit/config.toml` is read from the process cwd — run `streamlit run src/wbmon/ui/app.py` from the repo root (Phase 2 compose uses working_dir `/app`; relayed to the Phase 2 planner).
+- **D3-A4 Heartbeat:** Phase 2 writes `scheduler_heartbeat.json` at least every 30 s, also during runs (D2-A2). The UI additionally shows «идёт сбор» when the latest run is `running` and started < 60 min ago, regardless of heartbeat age.
+- **D3-A5 Honest-gap rule (from research):** ABSENT only when the query attempt has `status='ok' AND is_complete=1`; runs that never attempted the query (limited manual runs, in-flight runs) paint no band; dedupe `(run, nm_id)` rows (keep min position) instead of strict one-to-one merges.
+- **D3-A6 Safety of rendering:** untrusted strings (product names, brands, sellers, query text) never go through `st.markdown`/`st.write`/`st.caption`; Plotly trace names/hover text are `html.escape`d; CSV export neutralises formula-injection prefixes (`= + - @`); NULL prices pre-formatted as «—» (not a numeric hover format).
+- **D3-A7 Assumptions accepted:** Δ = change vs the previous complete run of the query; period filters anchored on the latest run time; CSV filename slug `q{sheet_order:02d}`.
+</addendum>
