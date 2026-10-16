@@ -97,3 +97,18 @@ Docker (Phase 2), the Streamlit UI (Phase 3), deployment and docs (Phase 4).
 - Postgres backend — v2.
 
 </deferred>
+
+<addendum date="2026-10-16" source="orchestrator, after 01-RESEARCH.md">
+## Addendum — decisions on open questions raised by phase research (auto-accepted)
+
+- **D-A1 Schema freeze:** migration 1 adds `subject_id` and `root_id` (WB `root`) to `observations`; drop the redundant explicit index on `(run_id, query_id, position)` (the UNIQUE constraint already provides it).
+- **D-A2 Append-only hardening:** `connect_rw` sets `PRAGMA recursive_triggers=ON` so `INSERT OR REPLACE` cannot silently replace rows; tests assert REPLACE raises `IntegrityError` and a source-grep test forbids `OR REPLACE` / `REPLACE INTO` in `src/`.
+- **D-A3 Transactions:** Python 3.12+ `autocommit=True`, 3.11 `isolation_level=None`; always explicit SQL `BEGIN IMMEDIATE` / `COMMIT` / `ROLLBACK`.
+- **D-A4 httpx hygiene:** `trust_env=False` (no env proxies) and a cookie policy that rejects all cookies (`client.cookies.jar.set_policy(...)`), `follow_redirects=False` for WB; any 3xx from WB → `blocked` (`error_class='redirect'`). Spaces in `query` are form-encoded as `+` by httpx `params=` (standard; accepted).
+- **D-A5 Breaker:** counts consecutive `blocked` **or** `rate_limited` queries (3 → open).
+- **D-A6 Run deadline:** `WBMON_RUN_DEADLINE` (default 2400 s); when exceeded, remaining queries are recorded as `error` with `error_class='deadline'` without requests; run status `partial`.
+- **D-A7 Lock in Phase 1:** `collect` takes a non-blocking `fcntl.flock` on `<db_path>.lock`; if busy → log `lock_busy`, exit 0, create no run. With `--slot` given and a run for that slot already existing → log `slot_exists`, exit 0, create no run. "Abandon stale runs" only runs while holding the lock (so it never kills a live run).
+- **D-A8 Packages:** httpx, tzdata, pytest, ruff, hatchling (and web extras streamlit/plotly/pandas) are standard, long-established PyPI packages — no human-verify checkpoint is needed before installing them.
+- **D-A9 User-Agent URL placeholder:** `+https://github.com/U-Steph/wb-serp-monitor` (final repo URL confirmed in Phase 4).
+- **D-A10 MVP / walking skeleton adaptation:** this is a CLI data pipeline with no UI in Phase 1. The walking skeleton = scaffold + full frozen schema (migration 1) + `wbmon init-db` + `wbmon collect --limit-queries 1` running end-to-end against an `httpx.MockTransport` fixture (page 1 only) and writing a real run/run_query/observation into a tmp DB + a read-back (`wbmon` prints the run summary). Later plans widen the slice (full fields, pagination, classification/breaker, query source, probe, lock/deadline, perf). Plans may run in parallel where files do not overlap.
+</addendum>
