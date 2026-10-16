@@ -67,7 +67,7 @@ Sources: TZ (`TZ_Wildberries_short_2026.pdf`), `.planning/PROJECT.md`, `.plannin
 
 - [x] **OPS-01**: One Docker image; `docker compose up -d` starts `init-db` (one-shot), `collector` (scheduler) and `web` (Streamlit) sharing one named volume; `restart: unless-stopped`; healthchecks; log rotation; Europe/Moscow scheduling with UTC storage; `tzdata` installed.
 - [x] **OPS-02**: The same project runs without Docker (venv + CLI, Makefile, systemd units) for local development; every setting (top_n, dest, delay, DB path, sheet URL, timezone, compose variables) is documented with real defaults in the README «Конфигурация» table plus a dotenv block. *Amended 2026-10-16: a literal `.env.example` file was not created because the user's local permission rules deny `.env*` files; the README table replaces it.*
-- [ ] **OPS-03**: Deployed on a host where the UI is reachable by a public link; a go/no-go probe (`wbmon probe` / `collect --limit-queries 2`) records whether WB serves plain requests from that host.
+- [x] **OPS-03**: Deployed on a host where the UI is reachable by a public link; a go/no-go probe (`wbmon probe` / `collect --limit-queries 2`) records whether WB serves plain requests from that host.
 - [x] **OPS-04**: Test suite (pytest) runs offline with fixtures and temp DBs only (no live WB calls, no synthetic data in the real DB); CI-style command documented.
 
 ### Deliverables (DOC)
@@ -145,7 +145,7 @@ Which phases cover which requirements. Updated during roadmap creation (2026-10-
 | UI-12 | Phase 3 | Complete |
 | OPS-01 | Phase 2 | Complete |
 | OPS-02 | Phase 2 | Complete |
-| OPS-03 | Phase 4 | Pending |
+| OPS-03 | Phase 4 | Complete |
 | OPS-04 | Phase 1 | Complete |
 | DOC-01 | Phase 4 | Pending |
 | DOC-02 | Phase 4 | Pending |

@@ -30,12 +30,12 @@ key-decisions:
   - "Docker Hub and PyPI were reachable from the host directly, so the approved SpaceWeb mirror and the systemd fallback were not needed"
   - "HTTPS on the sslip.io address worked at the first attempt (certificate obtained in 7 s), so the plain-HTTP fallback was not used"
   - "ufw is inactive on the host and was left inactive (enabling it risked an SSH lock-out); port 8501 is bound to 127.0.0.1, only 22, 80 and 443 listen publicly"
-  - "Task 3 decision is pending-user: the probe was blocked, so continue was not auto-selected"
+  - "Task 3 decision: ship-blocked (2026-10-17 01:15 МСК) — the host probe was blocked, the user's own probe from a home connection was blocked too; the stack keeps running and records an honest blocked history"
 
 patterns-established:
   - "Repository files are shipped with `git archive HEAD` over SSH, so the deployed code equals the committed HEAD"
 
-requirements-completed: []
+requirements-completed: [OPS-03]
 
 duration: 45min
 completed: 2026-10-17
@@ -43,14 +43,14 @@ completed: 2026-10-17
 
 # Phase 4 Plan 02: Deploy to a VPS, host probe and unattended collection Summary
 
-**The stack runs unattended on a SpaceWeb VPS behind Caddy with a valid certificate at https://194-226-98-141.sslip.io; the first Wildberries request from the host (probe) was blocked with 403 `wbaas`, so no manual run was made, and the scheduler records an honest blocked history that survives a stack restart and a host reboot. The post-probe decision (Task 3) is pending the user.**
+**The stack runs unattended on a SpaceWeb VPS behind Caddy with a valid certificate at https://194-226-98-141.sslip.io; the first Wildberries request from the host (probe) was blocked with 403 `wbaas`, so no manual run was made, and the scheduler records an honest blocked history that survives a stack restart and a host reboot. After the user's own probe from a home connection was blocked as well, the user's decision (Task 3) is `ship-blocked`.**
 
 ## Performance
 
 - **Duration:** about 45 min
 - **Started:** 2026-10-16T21:20Z (preflight 21:23:02Z)
 - **Completed:** 2026-10-16T22:05Z (01:05 МСК, 2026-10-17)
-- **Tasks:** Task 1 recorded from the user's answers, Task 2 done, Task 3 pending the user
+- **Tasks:** Task 1 recorded from the user's answers, Task 2 done, Task 3 answered by the user (`ship-blocked`)
 - **Files modified in the repository:** 0 (only this SUMMARY and the state files)
 
 ## Task 1: user answers (recorded; SSH details are in the untracked notes only)
@@ -126,7 +126,15 @@ Report counters (read-only, through `connect_ro`; script in the untracked `../wb
 
 ## Decision (Task 3)
 
-`decision: pending-user`. The probe was `blocked`, so `continue` was not auto-selected. The user chooses between: `continue` (keep the stack running; hourly attempts continue, which gives an honest blocked history and costs about 3 real requests per hour), `ship-blocked` (ship the honest blocked history now; the UI, run log and README show plainly that WB blocks plain requests from this host), `other-host` (another host, new honest probe) and `other-source` (new scope). Never circumvention. The stack keeps running in the meantime.
+`decision: ship-blocked` (2026-10-17, about 01:15 МСК). The probe was `blocked`, so `continue` was not auto-selected and the checkpoint went to the user, with these options: `continue`, `ship-blocked`, `other-host` (another network) and `other-source` (new scope); circumvention was never an option.
+
+Before deciding, the user ran one `wbmon probe` on their Mac from their home connection in Russia (at the orchestrator's suggestion: VPN off for that single request). It was blocked the same way:
+
+```json
+{"outcome": "blocked", "error_class": "http_403", "http_status": 403, "server": "wbaas", "content_type": "text/plain", "products": null, "normquery": null, "shape": null, "elapsed_ms": 41, "attempts": 1, "endpoint": "https://search.wb.ru/exactmatch/ru/common/v18/search", "params": {"ab_testing": "false", "appType": "1", "curr": "rub", "lang": "ru", "locale": "ru", "resultset": "catalog", "sort": "popular", "spp": "30", "suppressSpellcheck": "false", "dest": "-1257786", "page": "1", "query": "постельное белье 2 спальное"}, "user_agent": "Mozilla/5.0 (compatible; wbmon/0.1.0; +https://github.com/U-Steph/wb-serp-monitor)", "message": "http=403 server=wbaas ctype=text/plain attempts=1 transport=- body="}
+```
+
+Three networks therefore give the same `wbaas` 403 to the plain client: the dev machine's foreign VPN exit (2026-10-16), the Russian datacentre VPS (00:33 МСК 2026-10-17) and a Russian home connection (about 01:10 МСК 2026-10-17). The block does not depend on where the client runs, so `other-host` was not pursued. The stack keeps running unattended: every hour the scheduler sends about 3 real requests, the breaker records the rest as `blocked`, and product data appears automatically if Wildberries starts serving plain clients again.
 
 ## Deviations from Plan
 
@@ -154,7 +162,7 @@ None beyond the plan's threat model. The public surface is exactly 80 and 443 (C
 
 ## Next Phase Readiness
 
-04-03 needs the user's Task 3 decision first. With `continue`, the stack is already running and has 2 consecutive scheduler runs, but all of them are `blocked`, so the evidence of at least 3 runs with real data cannot be produced unless Wildberries starts serving the host. With `ship-blocked`, 04-03 can replace the markers with the live URL and the probe JSON above and describe the honest blocked history.
+Decision `ship-blocked`: 04-03 waits for at least 3 consecutive scheduler runs (unattended operation), then replaces the markers with the live URL and the host probe JSON above and describes the honest blocked history. The home-connection probe may be quoted as additional evidence once the user confirms that the VPN was off for it.
 
 ## Self-Check: PASSED
 

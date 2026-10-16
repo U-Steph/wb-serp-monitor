@@ -4,7 +4,7 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: "Session resumed, proceeding to 04-02 (deploy). The user is ordering a SpaceWeb VPS (Ubuntu 24.04, 2 vCPU / 2 GB / 20 GB, Saint Petersburg, trial + hourly billing, this Mac's deploy key) and will send a screenshot, then the server IP; next run `/gsd-execute-phase 4`. Agreed 04-02 Task 1 answers: publish A (already public); method docker, fallbacks SpaceWeb's own Docker Hub mirror `dockerhub.sweb.ru`, then systemd; address https via `{dashed-ip}.sslip.io`, fallback `http://IP:8501`; apt yes; ufw yes; reboot yes (fresh host). Extra host check requested: reachability of api.telegram.org (no token) for a possible Telegram bot phase, decided after the WB probe."
-last_updated: "2026-10-16T22:03:20.506Z"
+last_updated: "2026-10-16T22:21:23.156Z"
 last_activity: 2026-10-16 -- Phase 4 execution started
 progress:
   total_phases: 4
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-10-16)
 ## Current Position
 
 Phase: 4 (publish-deliverables) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 4
+Plan: 3 of 3
+Status: Ready to execute
 Last activity: 2026-10-16 -- Phase 4 execution started
 
 Progress: [█████████░] 13 of 15 plans (87%)
