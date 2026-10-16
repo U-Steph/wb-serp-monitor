@@ -2,23 +2,15 @@
 
 from __future__ import annotations
 
-import json
 import time
 from collections.abc import Callable
 from datetime import datetime, tzinfo
 
 from wbmon import clock
-from wbmon.models import PageFetch, QueryResult
-from wbmon.normalize import extract_normquery, extract_products, normalize_product
+from wbmon.classify import classify_page
+from wbmon.models import QueryResult
+from wbmon.normalize import extract_normquery, normalize_product
 from wbmon.wb_client import WbClient
-
-
-def _parse_json(fetch: PageFetch) -> object:
-    """Decode the body as JSON, returning ``None`` when it is not valid JSON."""
-    try:
-        return json.loads(fetch.content)
-    except ValueError:
-        return None
 
 
 def collect_query(
@@ -32,37 +24,47 @@ def collect_query(
 ) -> QueryResult:
     """Fetch page 1 of ``query`` and normalise up to ``top_n`` products in SERP order.
 
-    Skeleton slice: a single page, and every unusable page is reported as a plain ``error``
-    result; the full classifier and pagination replace this later.
+    The page is classified before anything is parsed: blocked / rate_limited / error pages are
+    recorded with their error class and a diagnostic message and carry no observations.
     """
     started_at = clock.iso_z(now())
     started = monotonic()
     fetch = client.fetch_page(query, 1)
-    payload = _parse_json(fetch) if fetch.status_code == 200 else None
-    products = extract_products(payload)
-    rows = []
-    if products:
-        for position, raw in enumerate(products[:top_n], start=1):
-            row = normalize_product(raw, position=position, collected_at=fetch.received_at, tz=tz)
-            if row is not None:
-                rows.append(row)
-    duration_ms = int((monotonic() - started) * 1000)
-    if rows and products is not None:
+    verdict = classify_page(fetch)
+    if verdict.outcome != "ok" or verdict.products is None:
         return QueryResult(
-            status="ok",
+            status=verdict.outcome if verdict.outcome != "end" else "error",
+            started_at=started_at,
+            duration_ms=int((monotonic() - started) * 1000),
+            error_class=verdict.error_class,
+            http_status=fetch.status_code,
+            pages_fetched=0,
+            error_message=verdict.message,
+        )
+    products = verdict.products
+    rows = []
+    for position, raw in enumerate(products[:top_n], start=1):
+        row = normalize_product(raw, position=position, collected_at=fetch.received_at, tz=tz)
+        if row is not None:
+            rows.append(row)
+    duration_ms = int((monotonic() - started) * 1000)
+    if not rows:
+        return QueryResult(
+            status="error",
             started_at=started_at,
             duration_ms=duration_ms,
-            observations=tuple(rows),
+            error_class="schema_drift",
             http_status=fetch.status_code,
-            pages_fetched=1,
-            is_complete=len(products) >= top_n,
-            normquery=extract_normquery(payload),
+            pages_fetched=0,
+            error_message="no product with an integer id",
         )
     return QueryResult(
-        status="error",
+        status="ok",
         started_at=started_at,
         duration_ms=duration_ms,
+        observations=tuple(rows),
         http_status=fetch.status_code,
-        pages_fetched=0,
-        error_message=f"http={fetch.status_code} transport={fetch.transport_error}",
+        pages_fetched=1,
+        is_complete=len(products) >= top_n,
+        normquery=extract_normquery(verdict.payload),
     )
