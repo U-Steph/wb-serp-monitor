@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: "Completed 02-01-PLAN.md (wbmon scheduler + healthcheck, heartbeat, signals)"
-last_updated: "2026-10-16T14:37:07.870Z"
+status: executing
+stopped_at: Completed 02-01-PLAN.md (wbmon scheduler + healthcheck, heartbeat, signals)
+last_updated: "2026-10-16T14:44:28.186Z"
 last_activity: 2026-10-16
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 12
-  completed_plans: 6
+  completed_plans: 7
   percent: 25
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-10-16)
 ## Current Position
 
 Phase: 02 of 4 (unattended operation packaging)
-Plan: 02-01 complete (1 of 3 planned)
+Plan: 3-01 complete (1 of 3 planned)
 Status: Phase 2 in progress; next 02-02
 Last activity: 2026-10-16
 
@@ -59,6 +59,7 @@ Progress: [██████████] 100% of Phase 1 plans
 | Phase 01 P04 | 25min | 3 tasks | 9 files |
 | Phase 01 P05 | 30min | 3 tasks | 8 files |
 | Phase 02 P01 | 40min | 3 tasks | 10 files |
+| Phase 02 P02 | 25min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -78,6 +79,7 @@ Recent decisions affecting current work:
 - [Phase 01]: 01-05: breaker counts blocked/rate_limited only for queries that sent requests; deadline has priority over an open breaker
 - [Phase 01]: 01-05: pages_fetched is Pager.pages_seen (successful pages incl. the wrap/empty page that ended the SERP)
 - [Phase 02-01]: Scheduler supervises the collect child with Popen + 1 s poll (D2-A2), heartbeat every 30 s incl. during runs; healthcheck only ever exits 0 or 1
+- [Phase 02]: [02-02] compose pins WBMON_DB_PATH and TZ via environment; web port via WEB_BIND/WEB_PORT; stack runs with no env file
 
 ### Pending Todos
 
@@ -88,6 +90,7 @@ None yet.
 - [Phase 1/4]: WB anti-bot layer returns 403/498 to non-browser clients from the dev machine; reachability from the deploy host is unknown (go/no-go probe in Phase 4). If blocked: honest blocked history, user decides next step - no circumvention.
 - [Phase 4]: Hosting not decided - requires the user to provide a host (likely a Russian VPS with Docker Compose) and approve publishing.
 - [Phase 1]: Delivery-days formula, price field (`min(sizes[].price.product)/100`), rating/review semantics and Moscow `dest=-1257786` are unverified hypotheses; raw inputs are stored so they can be recalibrated.
+- .env.example not created (user permission denies .env* writes); content at scratchpad env_example.txt; OPS-02 docs deferred to Phase 4 README
 
 ## Deferred Items
 
@@ -99,6 +102,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-16T14:37:03.952Z
+Last session: 2026-10-16T14:44:23.595Z
 Stopped at: Completed 02-01-PLAN.md (wbmon scheduler + healthcheck, heartbeat, signals)
 Resume file: None
