@@ -1,0 +1,10 @@
+# Allowlist: everything is excluded unless re-included below.
+# .venv, .git, .planning, data/, tests and .env are therefore excluded by construction.
+*
+!pyproject.toml
+!src
+!.streamlit
+# Never ship caches or databases, even from inside allowed directories.
+**/__pycache__
+**/*.pyc
+**/*.sqlite3*
