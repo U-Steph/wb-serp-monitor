@@ -546,3 +546,54 @@ Planner note: key names above were checked against `streamlit/config.py` (1.66.0
 - [ ] Dimension 6 Registry Safety: PASS
 
 **Approval:** pending
+
+---
+
+## Addendum — implementation deviations recorded after review (2026-10-16)
+
+Source: `03-UI-REVIEW.md` (UI-1..UI-4), the orchestrator's browser check (VIS-1, VIS-2) and the code review fixes (`03-REVIEW-FIX.md`). Where this addendum and the sections above disagree, the addendum is what the code does.
+
+### Copy (UI-3)
+
+| Constant (`texts.py`) | Spec wording | Shipped wording | Reason |
+|-----------------------|--------------|-----------------|--------|
+| `TABLE_NULL_CAPTION` | `Пустая ячейка — данных нет: поле не получено от Wildberries.` | `Прочерк «—» — данных нет: поле не получено от Wildberries.` | Every table uses `placeholder="—"`, so an unknown value is shown as a dash, not as an empty cell. The caption must describe what the visitor sees. |
+| `CSV_CAPTION` | `CSV: разделитель «;», десятичная запятая, кодировка UTF-8 с BOM — открывается в Excel.` | same, plus: `Ячейки, начинающиеся с «=», «+», «-», «@», экранированы апострофом.` | Documents the formula-injection guard of D3-A6 for the person who opens the file in Excel. |
+| `BANNER_PARTIAL` | `успешно {ok} из {n} запросов` | `успешно {ok} из {n}` where `{n}` is `«N запроса/запросов»` | Correct Russian after «из» (`1 из 21 запроса`); the noun is produced by `queries_genitive`. Same meaning. |
+| `BANNER_BLOCKED` | `…заблокирован Wildberries (HTTP {code}) по {blocked} из {n} запросов.` | `…заблокирован Wildberries{ (HTTP code)} по {blocked} из {n}` with `{n}` as above | The HTTP part is omitted as a whole when no real code is known; same noun rule. |
+| `BANNER_ALL_BLOCKED` | `(антибот, HTTP 403)` | `(антибот{, HTTP code})` | The code is shown only when it was observed (circuit-open rows carry none). |
+| `BANNER_RUNNING_STALE` (new) | — | `⏸ Последний сбор начат {HH:MM} МСК и не завершился — возможно, сборщик остановлен. Следующая попытка в {HH}:00 МСК.` (`st.warning`) | A `running` run older than 60 min is not live (D3-A4). The banner uses the same rule as the collector line instead of claiming «Идёт сбор» forever (WR-01). |
+| `HEARTBEAT_RUNNING` (new, D3-A4) | — | `🟢 Сборщик: идёт сбор (начат {HH:MM} МСК)` | Shown only for a `running` run started less than 60 min ago. |
+| `ABOUT_INTRO`, `ABOUT_COLLECTED` | fixed `70` and `топ-200` | `(сейчас их {n})`, `(сейчас {n}; …)`, `топ-{top_n}` | The numbers come from the data (IN-03). The header subtitle uses the same source; `texts.DEFAULT_N_QUERIES = 70` is used only while the database has no run yet. |
+| No-runs empty state | heading plus body sentence | one `st.info` line (`BANNER_NO_RUNS`) | Accepted as shipped. |
+
+### Layout and spacing (UI-1)
+
+The scale in «Spacing Scale» is implemented with `st.container(gap=...)`:
+
+- header block -> tabs: `gap=24` (lg) around the header container and the tab strip;
+- «Позиции»: `gap="medium"` (xl, 32 px) between the picker, the chart-and-table group and the history expander; `gap=24` (lg) between the chart block and the characteristics table under it (the two rules of the spec are read as: xl between major blocks, lg between a chart and its own table);
+- sidebar: period and default N form one `gap="xsmall"` (sm, 8 px) group; the totals box is `st.container(border=True, gap="xsmall")`;
+- everything else keeps Streamlit's default md (16 px). The xs (4 px) token is not used: the badge and the collector line sit side by side in `st.columns([3, 2])`.
+
+### Typography (UI-2)
+
+The query label under the «Выдача» sub-header is an `st.caption` (theme body font), not `st.text` (monospace). The text is untrusted, so `texts.md_literal` backslash-escapes every ASCII punctuation character and flattens line breaks first; `*`, `_`, `[`, `` ` ``, `<`, `#`, `:` and a leading `01.` stay literal. This amends D3-A6: untrusted strings may reach `st.caption` only through `md_literal`. Streamlit-specific `:colour[...]` and `:emoji:` directives are neutralised by the same escaping in CommonMark terms; a frontend that still applied them to the literal text could only change the colour of that one line.
+
+### Heatmap glyph colours (UI-4)
+
+A Plotly heatmap takes a single text colour, so the in-cell glyphs are drawn as text-mode scatter overlays, one trace per colour, over the heatmap (`charts.GLYPH_COLORS`): white `#FFFFFF` on ok, blocked, rate_limited and error; ink `#1A1D21` for `~` on the amber partial fill. The overlays are `hoverinfo="skip"`, so the hover still comes from the heatmap cell. `fig.data[0]` is still the heatmap.
+
+### Position chart legend (VIS-1)
+
+The legend is horizontal as specified, with a fixed entry width: `legend.entrywidthmode="pixels"`, `legend.entrywidth=250` (`charts.LEGEND_ENTRY_PX`). Plotly measures legend text before the web font has loaded, and auto-sized entries were drawn on top of each other. Series names longer than 32 characters are cut with an ellipsis (`charts.legend_name`) so a long brand cannot spill into the next entry; the full ID stays in the name and in the hover.
+
+### Number format in tables (VIS-2)
+
+Rows «Цена, ₽» and «Отзывов» in the column table use `NumberColumn(format="%d")` instead of `"localized"`. `"localized"` follows the browser locale and printed `1,073` in an en-US browser. The unit stays in the column title. Metrics and hover text keep the U+202F thousands separator from `texts.fmt_int`.
+
+### Other
+
+- Streamlit's built-in dataframe CSV/clipboard export is switched off (`[client] disableDataExport = true`): it would export raw cell text and bypass the formula-injection guard of the «Скачать CSV» button (WR-03). The «Скачать CSV» button is the only export.
+- The header is rendered inside `_guarded` like the tab bodies; an unexpected failure shows `ERROR_BLOCK` and the tabs still work (WR-02).
+- The snapshot slider key contains the newest run id, so a run that lands while the page is open moves it to «latest» (WR-04).
