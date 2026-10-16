@@ -452,3 +452,54 @@ def test_rows_written_by_collect_are_immutable():
             with pytest.raises(sqlite3.IntegrityError):
                 con.execute(sql)
         assert con.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 5
+
+
+# ------------------------------------------------------------- IN-06: ensure_wal diagnostics
+
+
+class _StubCursor:
+    def __init__(self, value):
+        self._value = value
+
+    def fetchone(self):
+        return (self._value,)
+
+
+class _LockedConnection:
+    """Every journal_mode statement fails the way a locked database does."""
+
+    def execute(self, sql):
+        raise sqlite3.OperationalError("database is locked")
+
+
+class _NoWalConnection:
+    """A filesystem that cannot do WAL: the pragma answers, but never with 'wal'."""
+
+    def execute(self, sql):
+        return _StubCursor("delete")
+
+
+def test_ensure_wal_chains_the_underlying_error(monkeypatch):
+    from wbmon.storage import db
+
+    sleeps: list[float] = []
+    monkeypatch.setattr(db.time, "sleep", sleeps.append)
+
+    with pytest.raises(RuntimeError, match="after 3 attempts") as caught:
+        db.ensure_wal(_LockedConnection(), attempts=3, pause=0.1)  # type: ignore[arg-type]
+
+    assert isinstance(caught.value.__cause__, sqlite3.OperationalError)
+    assert "database is locked" in str(caught.value.__cause__)
+    assert sleeps == [0.1] * 3
+
+
+def test_ensure_wal_pauses_between_non_wal_answers_and_reports_the_mode(monkeypatch):
+    from wbmon.storage import db
+
+    sleeps: list[float] = []
+    monkeypatch.setattr(db.time, "sleep", sleeps.append)
+
+    with pytest.raises(RuntimeError, match=r"journal_mode=delete"):
+        db.ensure_wal(_NoWalConnection(), attempts=4, pause=0.25)  # type: ignore[arg-type]
+
+    assert sleeps == [0.25] * 4

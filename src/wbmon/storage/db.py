@@ -33,16 +33,28 @@ def connect_rw(path: str | Path) -> sqlite3.Connection:
 
 
 def ensure_wal(con: sqlite3.Connection, attempts: int = 20, pause: float = 0.25) -> None:
-    """Switch the database to WAL, retrying when a concurrent first-time init holds the lock."""
+    """Switch the database to WAL, retrying when a concurrent first-time init holds the lock.
+
+    Every failed attempt (an ``OperationalError`` or a non-WAL answer, e.g. a filesystem without
+    shared memory) is followed by a pause. If all attempts fail the ``RuntimeError`` chains the
+    last underlying error and names the journal mode SQLite reported.
+    """
+    last_exc: sqlite3.Error | None = None
+    mode = "unknown"
     for _ in range(attempts):
-        if str(con.execute("PRAGMA journal_mode").fetchone()[0]).lower() == "wal":
-            return
         try:
-            if str(con.execute("PRAGMA journal_mode = WAL").fetchone()[0]).lower() == "wal":
+            mode = str(con.execute("PRAGMA journal_mode").fetchone()[0]).lower()
+            if mode == "wal":
                 return
-        except sqlite3.OperationalError:
-            time.sleep(pause)
-    raise RuntimeError("could not switch database to WAL")
+            mode = str(con.execute("PRAGMA journal_mode = WAL").fetchone()[0]).lower()
+            if mode == "wal":
+                return
+        except sqlite3.OperationalError as exc:
+            last_exc = exc
+        time.sleep(pause)
+    raise RuntimeError(
+        f"could not switch database to WAL after {attempts} attempts (journal_mode={mode})"
+    ) from last_exc
 
 
 def connect_ro(path: str | Path) -> sqlite3.Connection:
