@@ -1,0 +1,13 @@
+.venv/
+data/
+*.sqlite3
+*.sqlite3-*
+*.lock
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.env
+dist/
+build/
+!src/wbmon/data/

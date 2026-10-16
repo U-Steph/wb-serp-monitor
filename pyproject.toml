@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "wbmon"
+dynamic = ["version"]                     # single source: src/wbmon/__init__.py
+description = "Wildberries SERP monitor: hourly collector with an append-only SQLite history"
+requires-python = ">=3.11"
+dependencies = ["httpx>=0.28.1,<1", "tzdata"]
+
+[project.optional-dependencies]           # declared up front so later phases never edit this file concurrently
+web = ["streamlit>=1.66,<2", "plotly>=7.1,<8", "pandas>=3,<4"]
+dev = ["pytest>=9,<10", "ruff>=0.17,<0.18"]
+
+[project.scripts]
+wbmon = "wbmon.cli:main"
+
+[tool.hatch.version]
+path = "src/wbmon/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wbmon"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = '-ra --strict-markers -m "not slow"'
+markers = ["slow: generated 2.4M-row performance test (about 10 s, about 0.9 GB temp disk)"]
+tmp_path_retention_policy = "failed"      # otherwise pytest keeps the last 3 runs of tmp dirs
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
