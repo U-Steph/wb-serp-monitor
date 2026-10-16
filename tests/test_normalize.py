@@ -502,3 +502,27 @@ def test_out_of_range_fields_become_null_but_the_product_is_kept():
 
 def test_out_of_range_product_id_is_skipped_not_fatal():
     assert normalize_product({"id": 10**30}, position=1, collected_at=COLLECTED_AT, tz=MSK) is None
+
+
+# ------------------------------------------------------------ WR-01: unparseable digit strings
+
+
+@pytest.mark.parametrize("text", ["²", "--5", "٣", "1_0", "+5", "", "-", "5.0", "1" * 5000])
+def test_to_int_rejects_strings_that_only_look_numeric(text):
+    from wbmon.normalize import to_int
+
+    assert to_int(text) is None
+
+
+@pytest.mark.parametrize(("text", "expected"), [("42", 42), (" 7 ", 7), ("-3", -3), ("007", 7)])
+def test_to_int_still_accepts_plain_ascii_integers(text, expected):
+    from wbmon.normalize import to_int
+
+    assert to_int(text) == expected
+
+
+def test_odd_digit_string_in_one_field_does_not_discard_the_product():
+    raw = {"id": 900000001, "feedbacks": "²", "supplierId": "--5", "totalQuantity": "12"}
+    row = normalize_product(raw, position=1, collected_at=COLLECTED_AT, tz=MSK)
+    assert row is not None
+    assert (row.feedbacks, row.seller_id, row.total_quantity) == (None, None, 12)

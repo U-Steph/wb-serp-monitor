@@ -6,6 +6,7 @@ Unknown stays ``None``: a missing or malformed field is never turned into 0 or a
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Mapping
 from datetime import tzinfo
 from decimal import ROUND_HALF_UP, Decimal
@@ -17,6 +18,7 @@ from wbmon.models import ObservationRow
 # SQLite stores INTEGER as a signed 64-bit value; anything outside that range is "unknown" (NULL)
 # rather than an OverflowError that would abort the whole query write.
 INT64_MAX = 2**63 - 1
+_INT_TEXT = re.compile(r"-?[0-9]+")
 
 
 def to_int(v: object) -> int | None:
@@ -32,8 +34,14 @@ def to_int(v: object) -> int | None:
         if not v.is_integer():
             return None
         result = int(v)
-    elif isinstance(v, str) and v.strip().lstrip("-").isdigit():
-        result = int(v)
+    elif isinstance(v, str):
+        text = v.strip()
+        if _INT_TEXT.fullmatch(text) is None:  # ASCII only: no "²", "٣", "--5", "1_0", "+5"
+            return None
+        try:
+            result = int(text)
+        except ValueError:  # e.g. more digits than the interpreter's int-conversion limit
+            return None
     else:
         return None
     return result if -INT64_MAX <= result <= INT64_MAX else None
