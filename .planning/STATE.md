@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-10-16)
 ## Current Position
 
 Phase: 04 of 4 (publish deliverables)
-Plan: Not started
-Status: Phase 2 plans complete; next Phase 3 (UI, separate worktree) and Phase 4
+Plan: 04-01 complete; 04-02 deferred by user; 04-03 partially done
+Status: Phases 1–3 complete and verified. Phase 4: README/SUBMISSION/systemd/CI done (04-01); repository published public at https://github.com/U-Steph/wb-serp-monitor and source zip + employer message prepared (04-03 parts); deployment to a host (04-02) deferred by the user on 2026-10-16 — no public UI link yet.
 Last activity: 2026-10-16
 
 Progress: [██████████] 100% of Phase 1 plans
@@ -107,5 +107,5 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-10-16T14:50:32.113Z
-Stopped at: Completed 02-03-PLAN.md (graceful SIGTERM, real-process proofs, packaging cross-checks; .env.example still deferred)
+Stopped at: Repository published; awaiting a user decision to deploy (04-02) — run /gsd-execute-phase 4 to resume deployment. `.env.example` still not created (user permission rule); README «Конфигурация» covers every setting.
 Resume file: None
