@@ -67,6 +67,56 @@ def query_label(sheet_order: int, text: str) -> str:
     return f"{int(sheet_order):02d}. {text}"
 
 
+# ------------------------------------------------------------------ tables, CSV and snapshot tab
+CHAR_TITLE = "Характеристики"
+HISTORY_EXPANDER = "История наблюдений"
+TABLE_NULL_CAPTION = "Прочерк «—» — данных нет: поле не получено от Wildberries."
+CSV_LABEL = "Скачать CSV"
+CSV_CAPTION = (
+    "CSV: разделитель «;», десятичная запятая, кодировка UTF-8 с BOM — открывается в Excel. "
+    "Ячейки, начинающиеся с «=», «+», «-», «@», экранированы апострофом."
+)
+CSV_DISABLED_HELP = "Нет данных для выгрузки"
+DELIVERY_HELP = "0 — сегодня, 1 — завтра. Оценка по данным Wildberries (time1 + time2)."
+AD_HELP = "Рекламное место в последнем наблюдении"
+AD_MARK = "✓"
+SNAPSHOT_TITLE = "Выдача по запросу"
+SNAPSHOT_SLIDER_LABEL = "Момент сбора (МСК)"
+SNAPSHOT_EMPTY = "По этому запросу пока нет успешных сборов. Ниже — результат последних попыток."
+
+# Column titles: the single source for every table built in series.py and configured in app.py.
+COL_QUERY = "Запрос"
+COL_TIME = "Время (МСК)"
+COL_ID = "ID"
+COL_NAME = "Название"
+COL_BRAND = "Бренд"
+COL_SELLER = "Продавец"
+COL_POSITION = "Позиция"
+COL_POSITION_NOW = "Позиция (текущая)"
+COL_DELTA = "Δ к прошлому сбору"
+COL_BEST = "Лучшая"
+COL_WORST = "Худшая"
+COL_SHARE = "В выдаче"
+COL_PRICE = "Цена, ₽"
+COL_RATING = "Рейтинг"
+COL_FEEDBACKS = "Отзывов"
+COL_DELIVERY = "Доставка, дн."
+COL_AD = "Реклама"
+COL_LAST_SEEN = "Последний раз в выдаче (МСК)"
+COL_STATUS = "Статус"
+COL_HTTP = "HTTP"
+COL_PAGES = "Страниц"
+COL_ITEMS = "Товаров"
+COL_REASON = "Причина"
+COL_DURATION = "Длительность"
+
+METRIC_COLLECTED = "Товаров собрано"
+METRIC_ADS = "Из них рекламных"
+METRIC_MEDIAN = "Медианная цена, ₽"
+METRIC_STATUS = "Статус сбора"
+
+DELTA_NEW = "новый"
+
 # ----------------------------------------------------------------------- empty / error states
 EMPTY_NO_DB = "База данных ещё не создана. Запустите `wbmon init-db`, затем `wbmon collect`."
 ERROR_DB_READ = (

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 from datetime import UTC, datetime, timedelta
 
 import pandas as pd
@@ -643,3 +644,432 @@ def test_chart_modules_stay_pure():
         source = Path(module.__file__).read_text(encoding="utf-8")
         for forbidden in ("import streamlit", "import sqlite3", "import numpy", "validate="):
             assert forbidden not in source
+
+
+# ------------------------------------------------------- characteristics, history and CSV
+
+DEFAULT = [A, B, D, C, E]
+CHAR_COLUMNS = [
+    "ID",
+    "Название",
+    "Бренд",
+    "Продавец",
+    "Позиция (текущая)",
+    "Δ к прошлому сбору",
+    "Лучшая",
+    "Худшая",
+    "В выдаче",
+    "Цена, ₽",
+    "Рейтинг",
+    "Отзывов",
+    "Доставка, дн.",
+    "Реклама",
+    "Последний раз в выдаче (МСК)",
+]
+HISTORY_COLUMNS = [
+    "Время (МСК)",
+    "ID",
+    "Позиция",
+    "Цена, ₽",
+    "Рейтинг",
+    "Отзывов",
+    "Доставка, дн.",
+    "Продавец",
+    "Реклама",
+]
+CSV_HEADER = "Запрос;Время (МСК);ID;Позиция;Цена, ₽;Рейтинг;Отзывов;Доставка, дн.;Продавец;Реклама"
+
+
+@pytest.fixture
+def mixed_points(mixed):
+    built, grid, obs = mixed
+    return built, series.build_points(grid, obs, DEFAULT), obs
+
+
+@pytest.mark.parametrize(
+    ("prev", "prev_absent", "cur", "expected"),
+    [
+        (2, False, 1, "▲ 1"),
+        (1, False, 2, "▼ 1"),
+        (5, False, 5, "= 0"),
+        (None, True, 3, "новый"),
+        (None, False, 3, "—"),
+        (4, False, None, "—"),
+        (None, True, None, "—"),
+    ],
+)
+def test_delta_text(prev, prev_absent, cur, expected):
+    assert series.delta_text(prev, prev_absent, cur) == expected
+
+
+def test_wb_url_is_built_from_the_integer_only():
+    assert series.wb_url(A) == "https://www.wildberries.ru/catalog/900000101/detail.aspx"
+    assert series.wb_url(pd.array([A], dtype="Int64")[0]).endswith("/900000101/detail.aspx")
+
+
+def test_characteristics_frame_reproduces_the_scenario_facts(mixed_points):
+    _, points, _ = mixed_points
+    frame = series.characteristics_frame(points, DEFAULT, pd.DataFrame())
+    assert list(frame.columns) == CHAR_COLUMNS
+    assert [u.rsplit("/", 2)[1] for u in frame["ID"]] == [str(n) for n in (A, B, D, C, E)]
+    assert frame["ID"].iloc[0] == series.wb_url(A)
+    assert list(frame["Позиция (текущая)"]) == [1, 2, 3, 4, 5]
+    assert list(frame["Δ к прошлому сбору"]) == ["▲ 1", "▼ 1", "▲ 1", "▼ 1", "= 0"]
+    assert list(frame["Лучшая"]) == [1, 1, 3, 1, 4]
+    assert list(frame["Худшая"]) == [2, 2, 4, 4, 5]
+    assert list(frame["В выдаче"]) == [100, 75, 100, 100, 100]
+    assert list(frame["Цена, ₽"]) == [1001, 1002, 1003, 1004, 1005]
+    assert list(frame["Реклама"]) == ["", "", "", "", "✓"]
+    assert frame["Название"].iloc[0] == f"ТЕСТ товар {A}"
+    assert set(frame["Бренд"]) == {"ТЕСТ-БРЕНД"}
+    assert set(frame["Продавец"]) == {"ТЕСТ-Продавец"}
+    assert frame["Рейтинг"].iloc[0] == 4.7
+    assert list(frame["Отзывов"]) == [11, 12, 13, 14, 15]
+    assert set(frame["Доставка, дн."]) == {2}
+
+
+def test_characteristics_last_seen_is_the_newest_run_start_msk(mixed_points):
+    built, points, _ = mixed_points
+    frame = series.characteristics_frame(points, DEFAULT, pd.DataFrame())
+    r6_start = series.to_msk_one(built.started[-1])
+    assert set(frame["Последний раз в выдаче (МСК)"]) == {pd.Timestamp(r6_start)}
+
+
+def test_characteristics_dtypes(mixed_points):
+    _, points, _ = mixed_points
+    frame = series.characteristics_frame(points, DEFAULT, pd.DataFrame())
+    for column in ("Позиция (текущая)", "Лучшая", "Худшая", "Отзывов", "Доставка, дн."):
+        assert str(frame[column].dtype) == "Int64", column
+    for column in ("В выдаче", "Цена, ₽", "Рейтинг"):
+        assert str(frame[column].dtype) == "Float64", column
+    for column in ("ID", "Название", "Бренд", "Продавец", "Δ к прошлому сбору", "Реклама"):
+        assert str(frame[column].dtype) == "str", column
+    assert str(frame["Последний раз в выдаче (МСК)"].dtype).startswith("datetime64")
+
+
+def test_characteristics_product_missing_from_the_latest_run(mixed):
+    built, grid, obs = mixed
+    points = series.build_points(grid, obs, [*DEFAULT, F])
+    frame = series.characteristics_frame(points, [*DEFAULT, F], pd.DataFrame())
+    last = frame.iloc[-1]
+    assert last["ID"] == series.wb_url(F)
+    assert pd.isna(last["Позиция (текущая)"])
+    assert last["Δ к прошлому сбору"] == "—"
+    assert last["В выдаче"] == 75
+    r5 = series.to_msk_one(built.started[4])
+    assert last["Последний раз в выдаче (МСК)"] == pd.Timestamp(r5)
+
+
+def test_characteristics_unknown_price_stays_na_not_zero(mixed):
+    built, grid, obs = mixed
+    only_r5 = obs[obs["run_id"] == built.run_ids[4]]
+    points = series.build_points(grid[grid["run_id"] == built.run_ids[4]], only_r5, [C])
+    frame = series.characteristics_frame(points, [C], pd.DataFrame())
+    assert pd.isna(frame["Цена, ₽"].iloc[0])
+    assert frame["Цена, ₽"].iloc[0] is not None
+
+
+def test_characteristics_product_never_found_takes_name_from_the_options(mixed):
+    _, grid, obs = mixed
+    points = series.build_points(grid, obs.iloc[0:0], [A])
+    options = pd.DataFrame({"nm_id": [A], "brand": ["Бренд-О"], "name": ["Название-О"]})
+    frame = series.characteristics_frame(points, [A], options)
+    row = frame.iloc[0]
+    assert (row["Название"], row["Бренд"], row["Продавец"]) == ("Название-О", "Бренд-О", "—")
+    assert pd.isna(row["Позиция (текущая)"]) and pd.isna(row["Лучшая"])
+    assert pd.isna(row["Цена, ₽"]) and pd.isna(row["Последний раз в выдаче (МСК)"])
+    assert row["Δ к прошлому сбору"] == "—"
+    assert row["В выдаче"] == 0
+
+
+def test_characteristics_new_product_is_marked_new():
+    grid = grid_frame(
+        [
+            (1, "2026-10-16T08:00:00Z", "ok", 1, 5),
+            (2, "2026-10-16T09:00:00Z", "ok", 1, 5),
+        ]
+    )
+    points = series.build_points(grid, obs_frame([(2, A, 3)]), [A])
+    frame = series.characteristics_frame(points, [A], pd.DataFrame())
+    assert frame["Δ к прошлому сбору"].iloc[0] == "новый"
+    assert frame["В выдаче"].iloc[0] == 50
+
+
+def test_characteristics_delta_ignores_a_partial_previous_run():
+    grid = grid_frame(
+        [
+            (1, "2026-10-16T08:00:00Z", "ok", 1, 5),
+            (2, "2026-10-16T09:00:00Z", "partial", 0, 2),
+            (3, "2026-10-16T10:00:00Z", "ok", 1, 5),
+        ]
+    )
+    obs = obs_frame([(1, A, 7), (2, A, 2), (3, A, 6)])
+    points = series.build_points(grid, obs, [A])
+    frame = series.characteristics_frame(points, [A], pd.DataFrame())
+    assert frame["Δ к прошлому сбору"].iloc[0] == "▲ 1"  # 7 -> 6 against complete run 1
+    assert frame["Лучшая"].iloc[0] == 2  # the partial FOUND point still counts for best/worst
+    assert frame["Худшая"].iloc[0] == 7
+    assert frame["В выдаче"].iloc[0] == 100  # ...but not for the share: 2 of 2 complete runs
+
+
+def test_characteristics_share_without_a_complete_run_is_na_not_a_division_error():
+    grid = grid_frame([(1, "2026-10-16T08:00:00Z", "partial", 0, 2)])
+    points = series.build_points(grid, obs_frame([(1, A, 2)]), [A])
+    frame = series.characteristics_frame(points, [A], pd.DataFrame())
+    assert pd.isna(frame["В выдаче"].iloc[0])
+    assert frame["Позиция (текущая)"].iloc[0] == 2
+
+
+def test_characteristics_share_never_exceeds_one_hundred_percent(mixed_points):
+    _, points, _ = mixed_points
+    frame = series.characteristics_frame(points, DEFAULT, pd.DataFrame())
+    assert (frame["В выдаче"] <= 100).all()
+
+
+def test_characteristics_of_no_selection_keeps_columns_and_dtypes(mixed_points):
+    _, points, _ = mixed_points
+    frame = series.characteristics_frame(points.iloc[0:0], [], pd.DataFrame())
+    assert frame.empty
+    assert list(frame.columns) == CHAR_COLUMNS
+    assert str(frame["Позиция (текущая)"].dtype) == "Int64"
+
+
+def test_history_frame_lists_every_found_point_newest_first(mixed_points):
+    _, points, _ = mixed_points
+    frame = series.history_frame(points)
+    assert list(frame.columns) == HISTORY_COLUMNS
+    assert len(frame) == 21
+    assert frame["Время (МСК)"].is_monotonic_decreasing
+    newest = frame[frame["Время (МСК)"] == frame["Время (МСК)"].max()]
+    assert list(newest["Позиция"]) == [1, 2, 3, 4, 5]
+    assert frame["ID"].str.startswith("https://www.wildberries.ru/catalog/").all()
+
+
+def test_history_frame_unknown_values_stay_na_and_text_gets_a_dash(mixed_points):
+    _, points, _ = mixed_points
+    frame = series.history_frame(points)
+    assert frame["Цена, ₽"].isna().sum() == 1  # C in run 5 has no price
+    patched = points.copy()
+    patched["seller_name"] = pd.NA
+    assert set(series.history_frame(patched)["Продавец"]) == {"—"}
+
+
+def test_history_frame_of_nothing_keeps_columns(mixed_points):
+    _, points, _ = mixed_points
+    frame = series.history_frame(points.iloc[0:0])
+    assert frame.empty and list(frame.columns) == HISTORY_COLUMNS
+
+
+def read_back(data: bytes) -> pd.DataFrame:
+    return pd.read_csv(io.BytesIO(data), sep=";", decimal=",", encoding="utf-8-sig")
+
+
+def test_csv_bytes_has_bom_header_and_crlf(mixed_points):
+    _, points, _ = mixed_points
+    data = series.csv_bytes(points, Q1)
+    assert data.startswith(b"\xef\xbb\xbf")
+    text = data.decode("utf-8-sig")
+    assert text.split("\r\n")[0] == CSV_HEADER
+    assert text.endswith("\r\n")
+    assert len(text.split("\r\n")) == 21 + 2  # header, rows and the empty tail
+    assert "\n" not in text.replace("\r\n", "")
+
+
+def test_csv_bytes_uses_decimal_comma_and_plain_ids(mixed_points):
+    _, points, _ = mixed_points
+    text = series.csv_bytes(points, Q1).decode("utf-8-sig")
+    assert "4,7" in text and "1001,0" in text
+    assert f";{A};" in text and "wildberries.ru" not in text
+    assert "4.7" not in text
+
+
+def test_csv_bytes_time_and_ad_flag_formats(mixed_points):
+    built, points, _ = mixed_points
+    frame = read_back(series.csv_bytes(points, Q1))
+    assert len(frame) == 21
+    expected = texts.fmt_dt(series.to_msk_one(built.started[-1]))
+    assert frame["Время (МСК)"].iloc[0] == expected
+    assert set(frame["Реклама"]) == {0, 1}
+    assert frame["Реклама"].sum() == 2  # A in run 3 and E in run 6
+
+
+def test_csv_null_price_is_an_empty_field(mixed_points):
+    _, points, _ = mixed_points
+    frame = read_back(series.csv_bytes(points, Q1))
+    assert frame["Цена, ₽"].isna().sum() == 1
+    text = series.csv_bytes(points, Q1).decode("utf-8-sig")
+    assert any(";;" in line for line in text.split("\r\n"))
+
+
+def test_csv_round_trip_keeps_hostile_text_unchanged(mixed_points):
+    _, points, _ = mixed_points
+    seller = 'Продавец; "кавычки"\nвторая строка'
+    patched = points.copy()
+    patched["seller_name"] = pd.Series([seller] * len(patched), dtype="object")
+    frame = read_back(series.csv_bytes(patched, "обычный; запрос"))
+    assert len(frame) == 21
+    assert set(frame["Продавец"]) == {seller}
+    assert set(frame["Запрос"]) == {"обычный; запрос"}
+
+
+@pytest.mark.parametrize(
+    ("raw", "safe"),
+    [
+        ("=1+1", "'=1+1"),
+        ("+7999", "'+7999"),
+        ("-cmd", "'-cmd"),
+        ("@SUM(A1)", "'@SUM(A1)"),
+        ("\tx", "'\tx"),
+        ("\rx", "'\rx"),
+        ("обычный текст", "обычный текст"),
+        ("", ""),
+        ("a=b", "a=b"),
+    ],
+)
+def test_csv_safe_vectors(raw, safe):
+    assert series.csv_safe(raw) == safe
+
+
+def test_csv_safe_leaves_missing_values_and_numbers_alone():
+    assert series.csv_safe(None) is None
+    assert series.csv_safe(pd.NA) is pd.NA
+    assert series.csv_safe(5) == 5
+    assert series.csv_safe(-1.5) == -1.5
+
+
+def test_csv_neutralises_the_query_and_the_seller(mixed_points):
+    _, points, _ = mixed_points
+    patched = points.copy()
+    patched["seller_name"] = pd.Series(["=HYPERLINK(1)"] * len(patched), dtype="object")
+    frame = read_back(series.csv_bytes(patched, "@evil"))
+    assert set(frame["Запрос"]) == {"'@evil"}
+    assert set(frame["Продавец"]) == {"'=HYPERLINK(1)"}
+
+
+def test_csv_of_nothing_is_just_the_header(mixed_points):
+    _, points, _ = mixed_points
+    data = series.csv_bytes(points.iloc[0:0], Q1)
+    assert data.decode("utf-8-sig") == CSV_HEADER + "\r\n"
+
+
+def test_csv_filename_uses_moscow_time_and_the_sheet_number():
+    now = datetime(2026, 10, 16, 11, 30, 0, tzinfo=UTC)
+    assert series.csv_filename(1, now) == "wb_serp_q01_20261016_1430.csv"
+    assert series.csv_filename(70, now) == "wb_serp_q70_20261016_1430.csv"
+    midnight = datetime(2026, 10, 16, 21, 5, 0, tzinfo=UTC)
+    assert series.csv_filename(3, midnight) == "wb_serp_q03_20261017_0005.csv"
+
+
+# ------------------------------------------------------------------ snapshot and attempts
+
+
+def test_snapshot_frame_and_metrics_of_the_newest_run(db_path):
+    built = scenario_mixed(db_path)
+    snap = data.load_snapshot_raw(str(db_path), built.run_ids[-1], built.query_ids[Q1])
+    frame = series.snapshot_frame(snap)
+    assert list(frame.columns) == [
+        "Позиция",
+        "Реклама",
+        "ID",
+        "Название",
+        "Бренд",
+        "Цена, ₽",
+        "Рейтинг",
+        "Отзывов",
+        "Доставка, дн.",
+        "Продавец",
+    ]
+    assert list(frame["Позиция"]) == [1, 2, 3, 4, 5]
+    assert [u.rsplit("/", 2)[1] for u in frame["ID"]] == [str(n) for n in (A, B, D, C, E)]
+    assert list(frame["Реклама"]) == ["", "", "", "", "✓"]
+    assert series.snapshot_metrics(snap, "ok") == {
+        "Товаров собрано": "5",
+        "Из них рекламных": "1",
+        "Медианная цена, ₽": "1\u202f003",
+        "Статус сбора": "✅ Успешно",
+    }
+
+
+def test_snapshot_partial_run_has_two_rows_and_a_partial_status(db_path):
+    built = scenario_mixed(db_path)
+    snap = data.load_snapshot_raw(str(db_path), built.run_ids[3], built.query_ids[Q1])
+    assert len(snap) == 2
+    assert series.snapshot_metrics(snap, "partial")["Статус сбора"] == "🟡 Частично"
+
+
+def test_snapshot_null_brand_is_a_dash_and_all_null_prices_have_no_median():
+    snap = pd.DataFrame(
+        {
+            "position": pd.array([2, 1], dtype="Int64"),
+            "is_promoted": pd.array([0, 1], dtype="Int64"),
+            "nm_id": pd.array([2, 1], dtype="Int64"),
+            "name": pd.array(["б", "а"], dtype="string"),
+            "brand": pd.array([pd.NA, "Б"], dtype="string"),
+            "price_rub": pd.array([pd.NA, pd.NA], dtype="Float64"),
+            "rating": pd.array([pd.NA, 4.5], dtype="Float64"),
+            "feedbacks": pd.array([pd.NA, 3], dtype="Int64"),
+            "delivery_days": pd.array([pd.NA, pd.NA], dtype="Int64"),
+            "seller_name": pd.array([pd.NA, pd.NA], dtype="string"),
+        }
+    )
+    frame = series.snapshot_frame(snap)
+    assert list(frame["Позиция"]) == [1, 2]
+    assert list(frame["Бренд"]) == ["Б", "—"]
+    assert frame["Цена, ₽"].isna().all()
+    assert series.snapshot_metrics(snap, "ok")["Медианная цена, ₽"] == "—"
+
+
+def attempts_input(**overrides):
+    base = {
+        "started_at": ["2026-10-16T08:00:00Z", "2026-10-16T07:00:00Z"],
+        "status": ["rate_limited", "blocked"],
+        "http_status": pd.array([429, pd.NA], dtype="Int64"),
+        "pages_fetched": pd.array([1, 0], dtype="Int64"),
+        "items_collected": pd.array([0, 0], dtype="Int64"),
+        "error_class": pd.array(["http_429", pd.NA], dtype="string"),
+        "duration_ms": pd.array([252000, 900], dtype="Int64"),
+    }
+    base.update(overrides)
+    return pd.DataFrame(base)
+
+
+def test_attempts_frame_columns_labels_and_durations():
+    frame = series.attempts_frame(attempts_input())
+    assert list(frame.columns) == [
+        "Время (МСК)",
+        "Статус",
+        "HTTP",
+        "Страниц",
+        "Товаров",
+        "Причина",
+        "Длительность",
+    ]
+    assert frame["Время (МСК)"].iloc[0] == pd.Timestamp("2026-10-16 11:00:00")
+    assert list(frame["Статус"]) == ["🚦 Лимит запросов", "⛔ Заблокировано"]
+    assert str(frame["HTTP"].dtype) == "Int64"
+    assert frame["HTTP"].iloc[0] == 429 and pd.isna(frame["HTTP"].iloc[1])
+    assert list(frame["Причина"]) == ["http_429", "—"]
+    assert list(frame["Длительность"]) == ["4 мин 12 с", "0 с"]
+
+
+def test_attempts_frame_unknown_duration_is_a_dash():
+    frame = series.attempts_frame(
+        attempts_input(duration_ms=pd.array([pd.NA, 1500], dtype="Int64"))
+    )
+    assert list(frame["Длительность"]) == ["—", "1 с"]
+
+
+def test_attempts_frame_of_nothing_keeps_the_columns(db_path):
+    scenario_mixed(db_path)
+    empty = data.load_query_attempts_raw(str(db_path), 999)
+    frame = series.attempts_frame(empty)
+    assert frame.empty and len(frame.columns) == 7
+
+
+def test_new_shaping_code_has_the_excel_safe_csv_calls():
+    from pathlib import Path
+
+    source = Path(series.__file__).read_text(encoding="utf-8")
+    assert source.count('encode("utf-8-sig")') == 1
+    assert source.count('sep=";"') == 1
+    assert source.count('decimal=","') == 1

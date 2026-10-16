@@ -25,6 +25,8 @@ from wbmon.storage.reader import MAX_IN_IDS
 CACHE_TTL_S = 60
 CACHE_MAX_ENTRIES = 256
 RUN_LOG_LIMIT = 200
+ATTEMPTS_LIMIT = 10
+SNAPSHOT_RUNS_LIMIT = 500
 HEARTBEAT_FILE = "scheduler_heartbeat.json"
 HEARTBEAT_STALE_S = 600  # at least twice the scheduler's write interval (it ticks every 30 s)
 READ_ERRORS = (sqlite3.Error, pd.errors.DatabaseError)
@@ -126,6 +128,32 @@ OBSERVATION_COLUMNS = (
     "name",
     "brand",
 )
+
+
+QUERY_ATTEMPTS_SQL = """
+SELECT r.started_at, rq.status, rq.http_status, rq.pages_fetched, rq.items_collected,
+       rq.error_class, rq.duration_ms
+FROM run_queries rq
+JOIN runs r ON r.id = rq.run_id
+WHERE rq.query_id = ?
+ORDER BY rq.run_id DESC
+LIMIT ?
+"""
+SNAPSHOT_RUNS_SQL = """
+SELECT r.id AS run_id, r.started_at, rq.status, rq.items_collected
+FROM run_queries rq
+JOIN runs r ON r.id = rq.run_id
+WHERE rq.query_id = ? AND rq.items_collected > 0
+ORDER BY r.started_at DESC, r.id DESC
+LIMIT ?
+"""
+SNAPSHOT_SQL = """
+SELECT position, is_promoted, nm_id, name, brand, price_rub, rating, feedbacks, delivery_days,
+       seller_name
+FROM observations
+WHERE run_id = ? AND query_id = ?
+ORDER BY position
+"""
 
 
 class DataVersion(NamedTuple):
@@ -254,6 +282,24 @@ def load_observations_raw(
         return _df(con, sql, (int(query_id), *ids, since))
 
 
+def load_query_attempts_raw(path: str, query_id: int, limit: int = ATTEMPTS_LIMIT) -> pd.DataFrame:
+    """The newest ``limit`` attempts of one query (any status), newest first."""
+    with contextlib.closing(connect_ro(path)) as con:
+        return _df(con, QUERY_ATTEMPTS_SQL, (int(query_id), int(limit)))
+
+
+def load_snapshot_runs_raw(path: str, query_id: int) -> pd.DataFrame:
+    """Runs in which the query stored observations (ok or partial), newest first, at most 500."""
+    with contextlib.closing(connect_ro(path)) as con:
+        return _df(con, SNAPSHOT_RUNS_SQL, (int(query_id), SNAPSHOT_RUNS_LIMIT))
+
+
+def load_snapshot_raw(path: str, run_id: int, query_id: int) -> pd.DataFrame:
+    """The stored top-N of one query in one run, in position order."""
+    with contextlib.closing(connect_ro(path)) as con:
+        return _df(con, SNAPSHOT_SQL, (int(run_id), int(query_id)))
+
+
 @st.cache_data(ttl=CACHE_TTL_S, max_entries=CACHE_MAX_ENTRIES, show_spinner=False)
 def load_overview(path: str, ver: DataVersion) -> dict:
     """Cached ``load_overview_raw``; ``ver`` is only part of the cache key."""
@@ -321,3 +367,26 @@ def load_observations(
     """Cached ``load_observations_raw``; callers pass ``nm_ids`` sorted so the key is stable."""
     del ver
     return load_observations_raw(path, query_id, nm_ids, since)
+
+
+@st.cache_data(ttl=CACHE_TTL_S, max_entries=CACHE_MAX_ENTRIES, show_spinner=False)
+def load_query_attempts(
+    path: str, ver: DataVersion, query_id: int, limit: int = ATTEMPTS_LIMIT
+) -> pd.DataFrame:
+    """Cached ``load_query_attempts_raw``."""
+    del ver
+    return load_query_attempts_raw(path, query_id, limit)
+
+
+@st.cache_data(ttl=CACHE_TTL_S, max_entries=CACHE_MAX_ENTRIES, show_spinner=False)
+def load_snapshot_runs(path: str, ver: DataVersion, query_id: int) -> pd.DataFrame:
+    """Cached ``load_snapshot_runs_raw``."""
+    del ver
+    return load_snapshot_runs_raw(path, query_id)
+
+
+@st.cache_data(ttl=CACHE_TTL_S, max_entries=CACHE_MAX_ENTRIES, show_spinner=False)
+def load_snapshot(path: str, ver: DataVersion, run_id: int, query_id: int) -> pd.DataFrame:
+    """Cached ``load_snapshot_raw``."""
+    del ver
+    return load_snapshot_raw(path, run_id, query_id)
