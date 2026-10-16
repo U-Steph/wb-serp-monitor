@@ -355,3 +355,122 @@ def test_docker_compose_config_accepts_the_file():
         timeout=60,
     )
     assert result.returncode == 0, result.stderr
+
+
+# ---------------------------------------------------------------------------------------------
+# Makefile
+# ---------------------------------------------------------------------------------------------
+
+MAKEFILE = REPO_ROOT / "Makefile"
+TARGETS = (
+    "help",
+    "install",
+    "test",
+    "lint",
+    "init-db",
+    "collect-once",
+    "scheduler",
+    "web",
+    "up",
+    "up-prebuilt",
+    "down",
+    "logs",
+    "ps",
+)
+_TARGET_RE = re.compile(r"^([a-z][a-z-]*):(.*)$")
+
+
+def parse_makefile(text: str) -> dict[str, dict]:
+    """Return ``{target: {"header": text after the colon, "recipe": [recipe lines]}}``."""
+    targets: dict[str, dict] = {}
+    current = None
+    for line in text.splitlines():
+        if line.startswith("\t"):
+            if current is not None:
+                targets[current]["recipe"].append(line[1:].strip())
+            continue
+        match = _TARGET_RE.match(line)
+        current = match.group(1) if match else None
+        if match:
+            targets[current] = {"header": match.group(2), "recipe": []}
+    return targets
+
+
+def _recipe(target: str) -> list[str]:
+    return parse_makefile(MAKEFILE.read_text(encoding="utf-8"))[target]["recipe"]
+
+
+def test_makefile_has_every_target_phony_and_documented():
+    text = MAKEFILE.read_text(encoding="utf-8")
+    targets = parse_makefile(text)
+    phony = next(line for line in text.splitlines() if line.startswith(".PHONY:"))
+    for name in TARGETS:
+        assert name in targets, name
+        assert name in phony.split(), name
+        assert "## " in targets[name]["header"], f"{name} has no help comment"
+    assert ".DEFAULT_GOAL := help" in text
+
+
+def test_makefile_local_targets():
+    assert any("-m venv" in line for line in _recipe("install"))
+    assert any('pip install -e ".[dev,web]"' in line for line in _recipe("install"))
+    assert any("-m pytest" in line for line in _recipe("test"))
+    assert _recipe("lint") == ["$(VENV)/bin/ruff check src tests"]
+    for target, command in (
+        ("init-db", "$(VENV)/bin/wbmon init-db"),
+        ("collect-once", "$(VENV)/bin/wbmon collect"),
+        ("scheduler", "$(VENV)/bin/wbmon scheduler"),
+        ("web", "$(VENV)/bin/streamlit run src/wbmon/ui/app.py"),
+    ):
+        (line,) = _recipe(target)
+        assert "$(ENVLOAD)" in line and line.endswith(command), target
+
+
+def test_makefile_docker_targets():
+    assert _recipe("up") == [
+        "@test -f .env || cp .env.example .env",
+        "docker compose up -d --build",
+    ]
+    assert "docker compose up -d --no-build" in _recipe("up-prebuilt")
+    assert _recipe("down") == ["docker compose down"]  # never -v: the history lives in the volume
+    (logs,) = _recipe("logs")
+    assert logs.startswith("docker compose logs -f") and logs.endswith("collector web")
+    assert _recipe("ps") == ["docker compose ps"]
+
+
+def test_makefile_has_no_confirm_guard_and_no_recursive_or_forced_recipes():
+    text = MAKEFILE.read_text(encoding="utf-8")
+    assert "CONFIRM" not in text  # D2-A5: a human tool, live collection is its purpose
+    assert "$(MAKE)" not in text  # dry runs (`make -n`) must execute nothing
+    for target in TARGETS:
+        for line in _recipe(target):
+            assert not line.lstrip("@-").startswith("+"), (target, line)
+
+
+def _make(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["make", "-C", str(REPO_ROOT), *args],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make is not installed")
+def test_make_help_lists_every_target():
+    result = _make("help")
+    assert result.returncode == 0, result.stderr
+    listed = {line.split("\t")[0] for line in result.stdout.splitlines()}
+    assert set(TARGETS) - {"help"} <= listed
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make is not installed")
+def test_make_dry_runs_print_the_docker_commands_and_create_nothing():
+    had_env = (REPO_ROOT / ".env").exists()
+    up = _make("-n", "up")
+    down = _make("-n", "down")
+    assert up.returncode == 0 and down.returncode == 0, (up.stderr, down.stderr)
+    assert "docker compose up -d --build" in up.stdout
+    assert "docker compose down" in down.stdout
+    assert "-v" not in down.stdout and "--volumes" not in down.stdout
+    assert (REPO_ROOT / ".env").exists() == had_env
