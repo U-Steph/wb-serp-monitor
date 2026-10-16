@@ -19,9 +19,9 @@ Sources: TZ (`TZ_Wildberries_short_2026.pdf`), `.planning/PROJECT.md`, `.plannin
 - [x] **COL-01**: For each query the collector requests the WB public search JSON (`exactmatch/ru/common/v{N}/search`, `sort=popular`, `resultset=catalog`, fixed `dest` for Moscow, `curr=rub`) with a plain `httpx` client, ordinary headers and a polite sequential rate (configurable delay).
 - [x] **COL-02**: It paginates until `top_n` products are collected (default 200, configurable via env/CLI), a page is empty, or a page wrap-around (page N repeats page 1, detected by an id fingerprint) occurs; positions are 1-based across pages in the exact array order (ads included).
 - [x] **COL-03**: Every HTTP outcome is classified before parsing: `ok`, `blocked` (403, 498, HTML body at 200), `rate_limited` (429, `Retry-After` honoured at most once), `error` (5xx/timeouts after ≤2 bounded retries; schema drift; `products: null`); 200-with-zero-products is recorded as an error, never as "no results".
-- [ ] **COL-04**: A failing query never aborts the run (per-query isolation); a circuit breaker stops sending requests after 3 consecutive `blocked` queries and records the remaining queries as `blocked` (`circuit_open`) without requests.
+- [x] **COL-04**: A failing query never aborts the run (per-query isolation); a circuit breaker stops sending requests after 3 consecutive `blocked` queries and records the remaining queries as `blocked` (`circuit_open`) without requests.
 - [x] **COL-05**: The collector never attempts anti-bot circumvention (no TLS impersonation, no stealth/headless browser, no token/cookie harvesting or replay, no CAPTCHA/PoW solving, no proxy rotation) — enforced by dependency list and code review.
-- [ ] **COL-06**: Each (run, query) attempt is logged with status, HTTP status, pages fetched, items collected, completeness (`items == top_n` or end of results), WB-normalized query (`metadata.normquery` when present), error text and duration.
+- [x] **COL-06**: Each (run, query) attempt is logged with status, HTTP status, pages fetched, items collected, completeness (`items == top_n` or end of results), WB-normalized query (`metadata.normquery` when present), error text and duration.
 
 ### Normalized fields (DATA)
 
@@ -112,9 +112,9 @@ Which phases cover which requirements. Updated during roadmap creation (2026-10-
 | COL-01 | Phase 1 | Complete |
 | COL-02 | Phase 1 | Complete |
 | COL-03 | Phase 1 | Complete |
-| COL-04 | Phase 1 | Pending |
+| COL-04 | Phase 1 | Complete |
 | COL-05 | Phase 1 | Complete |
-| COL-06 | Phase 1 | Pending |
+| COL-06 | Phase 1 | Complete |
 | DATA-01 | Phase 1 | Complete |
 | DATA-02 | Phase 1 | Complete |
 | DATA-03 | Phase 1 | Complete |

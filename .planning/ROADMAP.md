@@ -34,7 +34,7 @@ write-up and the source archive.
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Collection Core** - Package, append-only SQLite, query source, WB client with response classification, normalizer, run orchestrator, CLI (`init-db` / `collect` / `probe`), offline test suite
+- [x] **Phase 1: Collection Core** - Package, append-only SQLite, query source, WB client with response classification, normalizer, run orchestrator, CLI (`init-db` / `collect` / `probe`), offline test suite (completed 2026-10-16)
 - [ ] **Phase 2: Unattended Operation & Packaging** - Hourly MSK scheduler with lock/catch-up/heartbeat, Dockerfile, Docker Compose, `.env.example`, local no-Docker path
 - [ ] **Phase 3: Web UI** - Russian read-only Streamlit app: position chart with honest gaps, characteristics/history tables, CSV, run log with heatmap, SERP snapshot
 - [ ] **Phase 4: Publish & Deliverables** - Deploy to the user's host with a public link, go/no-go probe, real hourly runs, Russian README, employer write-up, source zip
@@ -69,7 +69,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01-05-PLAN.md — Full honest run: multi-page top-200, circuit breaker, run deadline, lock/slot/abandon, final CLI contract, e2e + CI on 3.11/3.12 (wave 3)
+- [x] 01-05-PLAN.md — Full honest run: multi-page top-200, circuit breaker, run deadline, lock/slot/abandon, final CLI contract, e2e + CI on 3.11/3.12 (wave 3)
 
 **Notes**:
 
