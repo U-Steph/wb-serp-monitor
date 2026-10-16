@@ -314,12 +314,33 @@ def render_snapshot_tab(
     )
 
 
-def render_runlog_tab(run_log: pd.DataFrame, latest: Mapping | None) -> None:
-    """The run table: the latest 200 runs, newest first."""
+def render_heatmap_block(path: str, ver: data.DataVersion) -> None:
+    """Query x run health grid: title, legend and the figure in a 480 px scroll box."""
+    st.markdown(texts.HEATMAP_TITLE)
+    st.markdown(texts.HEATMAP_LEGEND)
+    runs, matrix = data.load_status_matrix(path, ver)
+    if runs.empty or matrix.empty:
+        st.info(texts.NO_RUNS_RUNLOG)
+        return
+    queries = data.load_queries(path, ver)
+    with st.container(height=480, border=True):
+        st.plotly_chart(
+            charts.status_heatmap(runs, matrix, queries),
+            width="stretch",
+            config=charts.CHART_CONFIG,
+        )
+
+
+def render_runlog_tab(
+    path: str, ver: data.DataVersion, run_log: pd.DataFrame, latest: Mapping | None
+) -> None:
+    """Summary badges, the status heatmap and the run table (the latest 200 runs, newest first)."""
     st.subheader(texts.RUNLOG_TITLE)
     if run_log.empty or latest is None:
         st.info(texts.NO_RUNS_RUNLOG)
         return
+    st.markdown(texts.summary_badges(series.status_counts(run_log), min(24, len(run_log))))
+    render_heatmap_block(path, ver)
     st.caption(texts.RUNLOG_COUNTS_CAPTION.format(n=int(latest["n_queries"])))
     config: dict[str, object] = {
         "Начало (МСК)": st.column_config.DatetimeColumn(format="DD.MM.YYYY HH:mm"),
@@ -337,8 +358,23 @@ def render_runlog_tab(run_log: pd.DataFrame, latest: Mapping | None) -> None:
     st.caption(texts.RUNLOG_FOOTER)
 
 
+def render_about_tab() -> None:
+    """The methodology page: our own copy, nothing from the database."""
+    st.subheader(texts.ABOUT_TITLE)
+    st.markdown(texts.ABOUT_INTRO)
+    for title, body in (
+        (texts.ABOUT_COLLECTED_TITLE, texts.ABOUT_COLLECTED),
+        (texts.ABOUT_READING_TITLE, texts.ABOUT_READING),
+        (texts.ABOUT_HONESTY_TITLE, texts.ABOUT_HONESTY),
+        (texts.ABOUT_LIMITS_TITLE, texts.ABOUT_LIMITS),
+        (texts.ABOUT_SOURCE_TITLE, texts.ABOUT_SOURCE),
+    ):
+        st.subheader(title)
+        st.markdown(body)
+
+
 def main() -> None:
-    """Build the page: header, sidebar filters and totals, positions, snapshot, run-log tabs."""
+    """Build the page: header, sidebar filters and totals, positions, snapshot, run-log, about."""
     st.set_page_config(page_title=texts.PAGE_TITLE, page_icon=texts.PAGE_ICON, layout="wide")
     st.title(texts.TITLE)
     try:
@@ -376,8 +412,8 @@ def main() -> None:
     render_header(overview, latest, blocked_http, settings)
     query, period, n = render_sidebar_filters(queries)
     render_sidebar_totals(overview)
-    positions_tab, snapshot_tab, runlog_tab = st.tabs(
-        [texts.TAB_POSITIONS, texts.TAB_SNAPSHOT, texts.TAB_RUNLOG]
+    positions_tab, snapshot_tab, runlog_tab, about_tab = st.tabs(
+        [texts.TAB_POSITIONS, texts.TAB_SNAPSHOT, texts.TAB_RUNLOG, texts.TAB_ABOUT]
     )
     with positions_tab:
         top_n = int(overview["top_n_latest"] or settings.top_n)
@@ -385,7 +421,9 @@ def main() -> None:
     with snapshot_tab:
         _guarded(render_snapshot_tab, path, ver, overview, query)
     with runlog_tab:
-        _guarded(render_runlog_tab, run_log, latest)
+        _guarded(render_runlog_tab, path, ver, run_log, latest)
+    with about_tab:
+        _guarded(render_about_tab)
 
 
 main()

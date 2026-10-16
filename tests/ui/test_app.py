@@ -8,7 +8,7 @@ import subprocess
 import sys
 import tomllib
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -27,17 +27,21 @@ from ui.dbbuilder import (
     RunSpec,
     append_run,
     build_db,
+    failed_result,
     ok_result,
     scenario_all_blocked,
     scenario_latest,
     scenario_mixed,
 )
+from wbmon import REPO_URL
 from wbmon.clock import iso_z, utc_now
 from wbmon.storage.db import connect_ro
+from wbmon.storage.migrations import init_db
 from wbmon.ui import series, texts
 
 APP = str(Path(__file__).resolve().parents[2] / "src" / "wbmon" / "ui" / "app.py")
 NO_SUCCESS = "Успешных сборов пока нет"
+FINAL_TABS = ["📈 Позиции", "🗂 Выдача", "🩺 Журнал сборов", "ℹ️ О сервисе"]
 
 
 def run_app() -> AppTest:
@@ -122,8 +126,6 @@ def test_non_sqlite_file_shows_the_read_error_without_path(db_path):
 
 
 def test_zero_runs_render_the_empty_header(db_path):
-    from wbmon.storage.migrations import init_db
-
     init_db(db_path)
     at = run_app()
     assert not at.exception
@@ -339,8 +341,17 @@ A, B, C, D, E, F = (NM[k] for k in "ABCDEF")
 NOT_IN_LATEST = " · не в последней выдаче"
 
 
-def chart_specs(at: AppTest) -> list[dict]:
+def all_chart_specs(at: AppTest) -> list[dict]:
     return [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
+
+
+def chart_specs(at: AppTest) -> list[dict]:
+    """The position charts only: the run-log heatmap lives in another tab of the same page."""
+    return [spec for spec in all_chart_specs(at) if spec["data"][0]["type"] != "heatmap"]
+
+
+def heatmap_specs(at: AppTest) -> list[dict]:
+    return [spec for spec in all_chart_specs(at) if spec["data"][0]["type"] == "heatmap"]
 
 
 def chart_spec(at: AppTest) -> dict:
@@ -500,7 +511,7 @@ def test_a_period_without_runs_for_the_query_says_so(db_path):
     at.sidebar.segmented_control[0].set_value("24 ч").run()
     assert not at.exception
     assert has(info_values(at), "За выбранный период нет сборов по этому запросу")
-    assert not at.get("plotly_chart")
+    assert not chart_specs(at)
 
 
 def test_an_all_blocked_query_shows_the_info_and_a_band_only_skeleton(db_path):
@@ -530,12 +541,10 @@ def test_a_run_in_flight_adds_neither_a_column_nor_a_band_to_unreached_queries(d
 
 
 def test_zero_runs_show_only_the_info_in_the_positions_tab(db_path):
-    from wbmon.storage.migrations import init_db
-
     init_db(db_path)
     at = run_app()
     assert not at.exception
-    assert not at.get("plotly_chart")
+    assert not chart_specs(at)
     assert not at.multiselect
 
 
@@ -679,10 +688,10 @@ def started_label(db_path: Path, run_id: int) -> str:
     return texts.fmt_dt_short(series.to_msk_one(iso_z(parse_started(db_path, run_id))))
 
 
-def test_tabs_are_positions_snapshot_run_log(db_path):
+def test_tabs_are_positions_snapshot_run_log_about(db_path):
     scenario_mixed(db_path)
     at = run_app()
-    assert [t.label for t in at.tabs] == ["📈 Позиции", "🗂 Выдача", "🩺 Журнал сборов"]
+    assert [t.label for t in at.tabs] == FINAL_TABS
 
 
 def test_snapshot_slider_defaults_to_the_newest_run_with_data(db_path):
@@ -768,8 +777,6 @@ def test_snapshot_query_label_is_plain_text_not_markdown(db_path):
 
 
 def test_zero_runs_snapshot_tab_shows_only_the_info(db_path):
-    from wbmon.storage.migrations import init_db
-
     init_db(db_path)
     at = run_app()
     assert not at.exception
@@ -784,3 +791,190 @@ def test_snapshot_keeps_marketplace_text_inside_cells(db_path):
     frame = find_exact_df(at, SNAPSHOT_FRAME_COLUMNS)
     assert name in list(frame["Название"])
     assert not has(markdown_values(at) + caption_values(at) + info_values(at), "e.x)")
+
+
+# ------------------------------------------------------- run-log heatmap and «О сервисе» tab
+
+
+def heatmap_z(at: AppTest) -> list[list[int]]:
+    (spec,) = heatmap_specs(at)
+    return [list(row) for row in spec["data"][0]["z"]]
+
+
+def text_values(at: AppTest) -> list[str]:
+    return markdown_values(at) + caption_values(at) + [i.value for i in at.info]
+
+
+def test_mixed_run_log_leads_with_badges_and_the_heatmap(db_path):
+    scenario_mixed(db_path)
+    at = run_app()
+    assert not at.exception
+    assert heatmap_z(at)[0] == [1, 3, 1, 2, 1, 1]
+    assert heatmap_z(at)[1:] == [[1] * 6, [1] * 6]
+    (spec,) = heatmap_specs(at)
+    assert spec["data"][0]["texttemplate"] == "%{text}"
+    assert spec["layout"]["height"] == 156
+    markdown = markdown_values(at)
+    summary = next(v for v in markdown if v.startswith("Последние 6 сборов"))
+    assert ":green-badge[✅ Успешно: 4]" in summary
+    assert ":yellow-badge[🟡 Частично: 2]" in summary
+    assert "**Состояние запросов по сборам**" in markdown
+    assert texts.HEATMAP_LEGEND in markdown
+    assert markdown.index(summary) < markdown.index(texts.HEATMAP_LEGEND)
+
+
+def test_zero_runs_show_the_info_and_no_heatmap(db_path):
+    init_db(db_path)
+    at = run_app()
+    assert not at.exception
+    assert has(info_values(at), "Данных о сборах пока нет")
+    assert not heatmap_specs(at)
+    assert has(info_values(at), "Сборов ещё не было")
+    assert not at.dataframe
+
+
+def test_one_ok_run_gives_a_one_column_heatmap_and_a_sixty_minute_chart(db_path):
+    started = iso_z(utc_now() - timedelta(minutes=10))
+    build_db(db_path, [RunSpec(started, {Q1: ok_result(started, (A, B))}, n_queries=3)])
+    at = run_app()
+    assert not at.exception
+    (heat,) = heatmap_specs(at)
+    assert len(heat["data"][0]["x"]) == 1
+    assert len(at.select_slider[0].options) == 1
+    lo, hi = chart_spec(at)["layout"]["xaxis"]["range"]
+    fmt = "%Y-%m-%d %H:%M:%S"
+    assert datetime.strptime(hi, fmt) - datetime.strptime(lo, fmt) == timedelta(minutes=60)
+
+
+def test_all_blocked_history_is_a_full_red_field_with_explanations(db_path):
+    scenario_all_blocked(db_path)
+    at = run_app()
+    assert not at.exception
+    z = heatmap_z(at)
+    assert len(z) == 3 and all(len(row) == 3 and set(row) == {3} for row in z)
+    (spec,) = heatmap_specs(at)
+    assert {g for row in spec["data"][0]["text"] for g in row} == {"✕"}
+    assert has([w.value for w in at.warning], "Wildberries отклоняет запросы сборщика")
+    attempts = [e.value for e in at.dataframe if "Причина" in e.value.columns]
+    assert len(attempts) == 2  # one under the positions tab, one under the snapshot tab
+    runs = find_df(at, "Тип")
+    assert list(runs["Статус"]) == ["⛔ Заблокировано"] * 3
+    assert has(markdown_values(at), ":red-badge[⛔ Заблокировано: 3]")
+    assert not has(markdown_values(at), ":green-badge[✅")
+
+
+@pytest.mark.parametrize(
+    ("final", "badge"),
+    [("running", ":blue-badge[⏳ Идёт: 1]"), ("abandoned", ":gray-badge[⏸ Прерван: 1]")],
+)
+def test_unfinished_runs_are_in_the_table_and_badges_but_not_in_the_heatmap(db_path, final, badge):
+    scenario_latest(db_path, final)
+    at = run_app()
+    assert not at.exception
+    assert len(heatmap_z(at)[0]) == 6
+    assert has(markdown_values(at), badge)
+    assert len(find_df(at, "Тип")) == 7
+
+
+def test_latest_error_run_shows_the_error_banner_and_a_grey_column(db_path):
+    scenario_latest(db_path, "error")
+    at = run_app()
+    assert not at.exception
+    assert has([e.value for e in at.error], "❌ Последний сбор завершился ошибкой")
+    assert [row[-1] for row in heatmap_z(at)] == [5, 5, 5]
+
+
+def test_about_tab_has_the_methodology_and_the_repository_link(db_path):
+    scenario_mixed(db_path)
+    at = run_app()
+    assert not at.exception
+    subheaders = [h.value for h in at.subheader]
+    for title in (
+        "О сервисе",
+        "Что собирается",
+        "Как читать данные",
+        "Честность данных",
+        "Ограничения",
+        "Исходный код",
+    ):
+        assert title in subheaders
+    markdown = markdown_values(at)
+    assert has(markdown, REPO_URL)
+    assert has(markdown, "Сервис не обходит защиту")
+    assert has(markdown, "может не соответствовать правилам площадки")
+
+
+def _db_without_runs_table(path: Path) -> None:
+    import sqlite3
+
+    with contextlib.closing(sqlite3.connect(path)) as con:
+        con.execute("PRAGMA user_version = 1")
+        con.execute("CREATE TABLE unrelated(x)")
+        con.commit()
+
+
+def _one_query_with_data(path: Path) -> None:
+    started = iso_z(utc_now() - timedelta(minutes=10))
+    build_db(
+        path,
+        [
+            RunSpec(
+                started,
+                {
+                    Q1: ok_result(started, (A, B)),
+                    Q2: failed_result(started),
+                    Q3: failed_result(started),
+                },
+                n_queries=3,
+            )
+        ],
+    )
+
+
+def _one_ok_run(path: Path) -> None:
+    started = iso_z(utc_now() - timedelta(minutes=10))
+    build_db(path, [RunSpec(started, {Q1: ok_result(started, (A,))}, n_queries=3)])
+
+
+STATE_MATRIX = {
+    "no_db": (lambda p: None, False),
+    "uninitialised": (lambda p: p.write_bytes(b""), False),
+    "unreadable": (lambda p: p.write_bytes(b"not a database"), False),
+    "no_runs_table": (_db_without_runs_table, False),
+    "zero_runs": (init_db, True),
+    "one_ok_run": (_one_ok_run, True),
+    "mixed": (scenario_mixed, True),
+    "all_blocked": (scenario_all_blocked, True),
+    "latest_partial": (lambda p: scenario_latest(p, "partial"), True),
+    "latest_running": (lambda p: scenario_latest(p, "running"), True),
+    "latest_abandoned": (lambda p: scenario_latest(p, "abandoned"), True),
+    "latest_blocked": (lambda p: scenario_latest(p, "blocked"), True),
+    "latest_error": (lambda p: scenario_latest(p, "error"), True),
+    "query_without_data": (_one_query_with_data, True),
+}
+
+
+@pytest.mark.parametrize("state", list(STATE_MATRIX))
+def test_state_matrix_renders_without_an_exception(db_path, state):
+    prepare, reaches_tabs = STATE_MATRIX[state]
+    prepare(db_path)
+    at = run_app()
+    assert not at.exception
+    if reaches_tabs:
+        assert [t.label for t in at.tabs] == FINAL_TABS
+        assert not has([e.value for e in at.error], "Не удалось построить этот блок")
+    else:
+        assert not at.tabs
+        shown = [e.value for e in at.error] + info_values(at)
+        assert has(shown, "Не удалось прочитать") or has(shown, "wbmon init-db")
+
+
+def test_a_query_without_data_gets_the_info_and_attempts_while_others_have_a_chart(db_path):
+    _one_query_with_data(db_path)
+    at = run_app()
+    assert not at.exception
+    assert chart_spec(at)["data"]
+    at.selectbox[0].select(2).run()  # the second query was blocked in its only run
+    assert not at.exception
+    assert has(info_values(at), "По этому запросу пока нет успешных сборов")
+    assert [row[0] for row in heatmap_z(at)] == [1, 3, 3]
