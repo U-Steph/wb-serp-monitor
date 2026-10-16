@@ -1,0 +1,42 @@
+{
+  "_test_only": true,
+  "params": {
+    "version": 1,
+    "curr": "rub",
+    "dest": -1257786,
+    "payloadVersion": 2
+  },
+  "metadata": {
+    "name": "тест-запрос",
+    "catalog_type": "preset",
+    "catalog_value": "preset=1"
+  },
+  "state": 0,
+  "data": {
+    "products": [
+      {
+        "time1": 3,
+        "time2": 26,
+        "id": 900000010,
+        "root": 800000010,
+        "brand": "ТЕСТ-БРЕНД",
+        "name": "ТЕСТ товар 900000010",
+        "supplier": "ТЕСТ-Продавец",
+        "supplierId": 500010,
+        "priceU": 129000,
+        "salePriceU": 72100,
+        "logisticsCost": 600,
+        "reviewRating": 4.2,
+        "feedbacks": 3,
+        "sizes": [
+          {
+            "name": "",
+            "origName": "0",
+            "time1": 2,
+            "time2": 42
+          }
+        ]
+      }
+    ]
+  }
+}

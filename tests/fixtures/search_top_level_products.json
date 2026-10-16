@@ -1,0 +1,249 @@
+{
+  "_test_only": true,
+  "metadata": {
+    "name": "тест-запрос",
+    "catalog_type": "preset",
+    "catalog_value": "preset=1",
+    "normquery": "тест запрос",
+    "search_result": {},
+    "rmi": "1",
+    "title": "тест-запрос",
+    "rs": 100,
+    "qv": "TEST-OPAQUE-QV"
+  },
+  "total": 2122,
+  "products": [
+    {
+      "time1": 3,
+      "time2": 26,
+      "wh": 900001,
+      "dtype": 4,
+      "dist": 120,
+      "id": 900000001,
+      "root": 800000001,
+      "kindId": 0,
+      "brand": "ТЕСТ-БРЕНД",
+      "brandId": 700001,
+      "siteBrandId": 0,
+      "colors": [
+        {
+          "name": "белый",
+          "id": 16777215
+        }
+      ],
+      "subjectId": 2300,
+      "subjectParentId": 6260,
+      "name": "ТЕСТ товар 900000001",
+      "entity": "",
+      "matchId": 600001,
+      "supplier": "ТЕСТ-Продавец",
+      "supplierId": 500001,
+      "supplierRating": 4.8,
+      "supplierFlags": 0,
+      "pics": 5,
+      "rating": 5,
+      "reviewRating": 4.7,
+      "nmReviewRating": 4.6,
+      "feedbacks": 120,
+      "nmFeedbacks": 40,
+      "volume": 10,
+      "viewFlags": 0,
+      "sizes": [
+        {
+          "name": "",
+          "origName": "0",
+          "rank": 0,
+          "optionId": 900000021,
+          "wh": 900001,
+          "time1": 3,
+          "time2": 26,
+          "dtype": 4,
+          "price": {
+            "basic": 300000,
+            "product": 150000,
+            "total": 150000,
+            "logistics": 0,
+            "return": 0
+          },
+          "saleConditions": 134217728,
+          "payload": "TEST-OPAQUE-PAYLOAD"
+        }
+      ],
+      "totalQuantity": 25,
+      "logs": "TEST-OPAQUE-LOGS",
+      "meta": {
+        "tokens": []
+      }
+    },
+    {
+      "time1": 3,
+      "time2": 26,
+      "wh": 900001,
+      "dtype": 4,
+      "dist": 120,
+      "id": 900000002,
+      "root": 800000002,
+      "kindId": 0,
+      "brand": "ТЕСТ-БРЕНД",
+      "brandId": 700001,
+      "siteBrandId": 0,
+      "colors": [
+        {
+          "name": "белый",
+          "id": 16777215
+        }
+      ],
+      "subjectId": 2300,
+      "subjectParentId": 6260,
+      "name": "ТЕСТ товар 900000002",
+      "entity": "",
+      "matchId": 600001,
+      "supplier": "ТЕСТ-Продавец",
+      "supplierId": 500001,
+      "supplierRating": 4.8,
+      "supplierFlags": 0,
+      "pics": 5,
+      "rating": 5,
+      "reviewRating": 4.7,
+      "nmReviewRating": 4.6,
+      "feedbacks": 120,
+      "nmFeedbacks": 40,
+      "volume": 10,
+      "viewFlags": 0,
+      "sizes": [
+        {
+          "name": "",
+          "origName": "0",
+          "rank": 0,
+          "optionId": 900000022,
+          "wh": 900001,
+          "time1": 3,
+          "time2": 26,
+          "dtype": 4,
+          "price": {
+            "basic": 300000,
+            "product": 150000,
+            "total": 150000,
+            "logistics": 0,
+            "return": 0
+          },
+          "saleConditions": 134217728,
+          "payload": "TEST-OPAQUE-PAYLOAD"
+        }
+      ],
+      "totalQuantity": 25,
+      "logs": "TEST-OPAQUE-LOGS",
+      "meta": {
+        "tokens": []
+      },
+      "log": {
+        "cpm": 1025,
+        "promotion": 1,
+        "promoPosition": 2,
+        "position": 7,
+        "advertId": 99000001,
+        "tp": "c"
+      }
+    },
+    {
+      "time1": 2,
+      "time2": 107,
+      "wh": 900001,
+      "dtype": 4,
+      "dist": 120,
+      "id": 900000003,
+      "root": 800000003,
+      "kindId": 0,
+      "brand": "ТЕСТ-БРЕНД",
+      "brandId": 700001,
+      "siteBrandId": 0,
+      "colors": [
+        {
+          "name": "белый",
+          "id": 16777215
+        }
+      ],
+      "subjectId": 2301,
+      "subjectParentId": 6260,
+      "name": "ТЕСТ товар 900000003",
+      "entity": "",
+      "matchId": 600001,
+      "supplier": "ТЕСТ-Продавец-2",
+      "supplierId": 500002,
+      "supplierRating": 4.8,
+      "supplierFlags": 0,
+      "pics": 5,
+      "rating": 5,
+      "reviewRating": 4.9,
+      "nmReviewRating": 4.8,
+      "feedbacks": 15,
+      "nmFeedbacks": 5,
+      "volume": 10,
+      "viewFlags": 0,
+      "sizes": [
+        {
+          "name": "XXS",
+          "origName": "42",
+          "rank": 1,
+          "optionId": 900000023,
+          "wh": 900001,
+          "time1": 2,
+          "time2": 211,
+          "dtype": 4,
+          "price": {
+            "basic": 475000,
+            "product": 144600,
+            "total": 153900,
+            "logistics": 9300,
+            "return": 0
+          },
+          "saleConditions": 134217728,
+          "payload": "TEST-OPAQUE-PAYLOAD"
+        },
+        {
+          "name": "M",
+          "origName": "46",
+          "rank": 2,
+          "optionId": 900000023,
+          "wh": 900001,
+          "time1": 2,
+          "time2": 107,
+          "dtype": 4,
+          "price": {
+            "basic": 475000,
+            "product": 139900,
+            "total": 147800,
+            "logistics": 7900,
+            "return": 0
+          },
+          "saleConditions": 134217728,
+          "payload": "TEST-OPAQUE-PAYLOAD"
+        },
+        {
+          "name": "L",
+          "origName": "48",
+          "rank": 3,
+          "optionId": 900000023,
+          "wh": 900001,
+          "time1": 3,
+          "time2": 203,
+          "dtype": 4,
+          "price": {
+            "basic": 475000,
+            "product": 144600,
+            "total": 144600,
+            "logistics": 0,
+            "return": 0
+          },
+          "saleConditions": 134217728,
+          "payload": "TEST-OPAQUE-PAYLOAD"
+        }
+      ],
+      "totalQuantity": 7,
+      "logs": "TEST-OPAQUE-LOGS",
+      "meta": {
+        "tokens": []
+      }
+    }
+  ]
+}

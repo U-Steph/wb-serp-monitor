@@ -339,13 +339,14 @@ def test_normalize_product_unknown_stays_null():
     unmapped = [
         n
         for n in OBSERVATION_COLUMNS
-        if n not in {"collected_at", "position", "nm_id", "name", "is_promoted"}
+        if n not in {"collected_at", "position", "nm_id", "name", "is_promoted", "ad_cpm"}
     ]
     assert all(getattr(row, name) is None for name in unmapped)
-    assert (
-        normalize_product({"id": 1, "log": {}}, position=1, collected_at="t", tz=tz).is_promoted
-        == 0
+    assert row.ad_cpm == 0
+    empty_log = normalize_product(
+        {"id": 1, "log": {}}, position=1, collected_at="2026-10-16T07:00:00Z", tz=tz
     )
+    assert empty_log is not None and empty_log.is_promoted == 0
 
 
 def test_load_bundled_matches_resource_lines():
