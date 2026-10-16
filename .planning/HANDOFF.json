@@ -1,0 +1,101 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-10-16T17:11:51.691Z",
+  "phase": "04",
+  "phase_name": "publish-deliverables",
+  "phase_dir": ".planning/phases/04-publish-deliverables",
+  "plan": 2,
+  "task": 0,
+  "total_tasks": 3,
+  "status": "paused",
+  "completed_tasks": [
+    {
+      "id": "04-01",
+      "name": "Russian README, SUBMISSION.md, systemd units, CI .[web,dev], docs contract tests",
+      "status": "done",
+      "commit": "9688e50 (branch gsd/phase-04-docs, merged as cb54652)"
+    },
+    {
+      "id": "04-03-partial",
+      "name": "Publish public repo + source zip + employer message + final time figure",
+      "status": "done",
+      "commit": "2ac49ff (pushed to origin/main)"
+    }
+  ],
+  "remaining_tasks": [
+    {
+      "id": "04-02",
+      "name": "Deploy to the user's host (Docker Compose or systemd), go/no-go `wbmon probe` first, public URL, restart survival",
+      "status": "not_started"
+    },
+    {
+      "id": "04-03-rest",
+      "name": "Wait for >=3 consecutive real hourly runs, replace marker 'будет добавлено после развёртывания' in README/SUBMISSION with live URL + host probe JSON, push, rebuild ../wb-serp-monitor.zip, update UI line in ../ОТВЕТ_РАБОТОДАТЕЛЮ.md",
+      "status": "not_started"
+    }
+  ],
+  "blockers": [
+    {
+      "description": "Deployment deferred by the user on 2026-10-16 ('Пока не разворачивать'); no host chosen",
+      "type": "human_action",
+      "workaround": "Finish with repo + zip + message (done); resume when the user provides a host"
+    },
+    {
+      "description": "Wildberries search API returns 403 (server: wbaas, anti-bot since ~late Sep 2026) to plain clients from the dev machine (German VPN egress); reachability from a Russian server is unknown",
+      "type": "external",
+      "workaround": "Probe from the deploy host first; if blocked, ship honest blocked history and let the user decide. Never circumvent."
+    }
+  ],
+  "human_actions_pending": [
+    {
+      "action": "Provide SSH target (user@host) of a Russian VPS and choose Docker vs systemd path",
+      "context": "Needed for 04-02 deploy; record it only in untracked ../wbmon-deploy/notes.md",
+      "blocking": true
+    },
+    {
+      "action": "Optionally create .env.example from the README «Конфигурация» dotenv block",
+      "context": "Agents cannot write .env* files (user permission deny rule)",
+      "blocking": false
+    },
+    {
+      "action": "Review and send ../ОТВЕТ_РАБОТОДАТЕЛЮ.md (Telegram text) with ../wb-serp-monitor.zip and the repo link",
+      "context": "Employer-facing deliverable; time figure stated as ≈ 5 h",
+      "blocking": false
+    }
+  ],
+  "decisions": [
+    {
+      "decision": "No anti-bot circumvention of any kind (no stealth/headless browsers to pass checks, TLS impersonation, token/cookie replay, CAPTCHA/PoW solving, proxy rotation)",
+      "rationale": "Hard project constraint; blocked runs are recorded honestly as 'blocked'",
+      "phase": "all"
+    },
+    {
+      "decision": "Public GitHub repo U-Steph/wb-serp-monitor (commit e-mail public)",
+      "rationale": "User approved 'Публичный репозиторий'",
+      "phase": "04"
+    },
+    {
+      "decision": "Deployment deferred",
+      "rationale": "User chose 'Пока не разворачивать'",
+      "phase": "04"
+    },
+    {
+      "decision": "README configuration table + dotenv block replace .env.example (OPS-02 amended)",
+      "rationale": "User permission settings deny .env* writes",
+      "phase": "02/04"
+    },
+    {
+      "decision": "compose keeps build: on every service via the x-wbmon anchor (IN-01 fix reverted)",
+      "rationale": "build: on init-db only risks 'pull access denied' on a clean host; unverifiable without Docker",
+      "phase": "02"
+    },
+    {
+      "decision": "Default WEB_BIND=0.0.0.0 (public link without Caddy); `make up-tls` binds web to 127.0.0.1 behind Caddy",
+      "rationale": "UI must be reachable by link; TLS path documented",
+      "phase": "02"
+    }
+  ],
+  "uncommitted_files": [],
+  "next_action": "Ask the user for the VPS SSH target (user@host) and Docker vs systemd, then run `/gsd-execute-phase 4` to execute plan 04-02 (probe first) and the remaining parts of 04-03.",
+  "context_notes": "Phases 1-3 complete, verified, code-reviewed with fixes; UI visually checked in headless Chromium (legend overlap + price format fixed). 1257 offline tests, CI green on Python 3.11-3.14 (run 38936789874). Local main == origin/main at 2ac49ff before this WIP commit. A proposal card 'Развернуть WB SERP Monitor на VPS' (task_240d4f40) exists in the app for the deploy follow-up."
+}
