@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: "Session resumed, proceeding to 04-02 (deploy). The user is ordering a SpaceWeb VPS (Ubuntu 24.04, 2 vCPU / 2 GB / 20 GB, Saint Petersburg, trial + hourly billing, this Mac's deploy key) and will send a screenshot, then the server IP; next run `/gsd-execute-phase 4`. Agreed 04-02 Task 1 answers: publish A (already public); method docker, fallbacks SpaceWeb's own Docker Hub mirror `dockerhub.sweb.ru`, then systemd; address https via `{dashed-ip}.sslip.io`, fallback `http://IP:8501`; apt yes; ufw yes; reboot yes (fresh host). Extra host check requested: reachability of api.telegram.org (no token) for a possible Telegram bot phase, decided after the WB probe."
-last_updated: "2026-10-16T21:21:16.128Z"
+last_updated: "2026-10-16T22:03:20.506Z"
 last_activity: 2026-10-16 -- Phase 4 execution started
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 15
-  completed_plans: 13
+  completed_plans: 14
   percent: 75
 ---
 
@@ -83,6 +83,7 @@ Recent decisions affecting current work:
 - [Phase 01]: 01-05: pages_fetched is Pager.pages_seen (successful pages incl. the wrap/empty page that ended the SERP)
 - [Phase 02-01]: Scheduler supervises the collect child with Popen + 1 s poll (D2-A2), heartbeat every 30 s incl. during runs; healthcheck only ever exits 0 or 1
 - [Phase 02]: [02-02] compose pins WBMON_DB_PATH and TZ via environment; web port via WEB_BIND/WEB_PORT; stack runs with no env file
+- [Phase 4]: 04-02: host probe blocked (403 wbaas); stack deployed at https://194-226-98-141.sslip.io with honest blocked history; Task 3 decision pending-user
 
 ### Pending Todos
 
@@ -106,6 +107,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-16T20:55:32.356Z
+Last session: 2026-10-16T22:03:16.017Z
 Stopped at: Session resumed, proceeding to 04-02 (deploy). The user is ordering a SpaceWeb VPS (Ubuntu 24.04, 2 vCPU / 2 GB / 20 GB, Saint Petersburg, trial + hourly billing, this Mac's deploy key) and will send a screenshot, then the server IP; next run `/gsd-execute-phase 4`. Agreed 04-02 Task 1 answers: publish A (already public); method docker, fallbacks SpaceWeb's own Docker Hub mirror `dockerhub.sweb.ru`, then systemd; address https via `{dashed-ip}.sslip.io`, fallback `http://IP:8501`; apt yes; ufw yes; reboot yes (fresh host). Extra host check requested: reachability of api.telegram.org (no token) for a possible Telegram bot phase, decided after the WB probe.
 Resume file: .planning/phases/04-publish-deliverables/.continue-here.md
