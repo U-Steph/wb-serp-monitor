@@ -251,6 +251,22 @@ def test_role_shares_image_volume_environment_and_log_rotation(compose, role):
     assert isinstance(service["command"], list)  # exec form: PID 1 receives SIGTERM
 
 
+@pytest.mark.parametrize("name", ["init-db", "collector", "web", "caddy"])
+def test_every_service_drops_all_capabilities_and_forbids_privilege_gain(compose, name):
+    service = compose["services"][name]
+    assert service["security_opt"] == ["no-new-privileges:true"]
+    assert service["cap_drop"] == ["ALL"]
+    assert "privileged" not in service
+    # read_only is deliberately not set: it cannot be verified without Docker (documented option)
+    assert "read_only" not in service
+
+
+def test_only_caddy_gets_a_capability_back_and_only_the_bind_one(compose):
+    assert compose["services"]["caddy"]["cap_add"] == ["NET_BIND_SERVICE"]
+    for name in ROLES:
+        assert "cap_add" not in compose["services"][name]
+
+
 def test_build_args_default_to_the_pinned_image_and_pypi(compose):
     args = compose["services"]["collector"]["build"]["args"]
     assert resolve(args["PYTHON_IMAGE"]) == "python:3.12-slim"

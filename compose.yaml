@@ -37,6 +37,11 @@ x-wbmon: &wbmon
   # Read-write in every role: WAL readers must be able to create the -shm file (never mount it ":ro").
   volumes:
     - wbdata:/data
+  # Container hardening: the app runs as uid 10001 and needs no capability or privilege escalation.
+  # Optional extra (NOT enabled, untested without Docker here): `read_only: true` plus
+  # `tmpfs: ["/tmp", "/home/app"]` on web and collector; /data stays writable through the volume.
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: ["ALL"]
   logging: *default-logging
 
 services:
@@ -102,6 +107,9 @@ services:
     restart: unless-stopped
     depends_on:
       - web
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    cap_add: ["NET_BIND_SERVICE"]  # the only capability Caddy needs: ports 80 and 443
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-:80}
     ports:
