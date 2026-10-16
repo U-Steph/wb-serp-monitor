@@ -219,6 +219,21 @@ def test_products_without_integer_ids_are_schema_drift():
     assert result.pages_fetched == 2
 
 
+def test_later_page_refusal_is_not_hidden_behind_schema_drift():
+    """IN-03: page 1 had only id-less products, page 2 was blocked -> the block is reported."""
+    payload = make_page(P1, 3)
+    payload["data"]["products"] = [{"name": "ТЕСТ без id"}, {"id": "abc"}, {"id": None}]
+    fake = pages(json_response(payload), html_response(403, headers={"server": "wbaas"}))
+
+    result, _ = collect(fake)
+
+    assert (result.status, result.error_class) == ("blocked", "http_403")
+    assert result.http_status == 403
+    assert result.items_collected == 0
+    assert result.pages_fetched == 1
+    assert "http=403" in (result.error_message or "")
+
+
 def test_product_skipped_event_is_logged_for_items_without_id(capsys):
     from wbmon.log import configure_logging
 

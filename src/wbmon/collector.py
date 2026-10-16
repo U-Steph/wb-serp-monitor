@@ -77,6 +77,19 @@ def collect_query(
             rows.append(row)
     if pager.skipped_no_id:
         log_event("product_skipped", query=query, count=pager.skipped_no_id)
+    if not rows and failure is not None:
+        # Nothing usable came from the pages that did load, but a later page was refused or
+        # failed: report that real verdict (it must feed the circuit breaker), not schema drift.
+        verdict, fetch = failure
+        return QueryResult(
+            status=verdict.outcome,  # type: ignore[arg-type]
+            started_at=started_at,
+            duration_ms=elapsed_ms(),
+            error_class=verdict.error_class,
+            http_status=fetch.status_code,
+            pages_fetched=pager.pages_seen,
+            error_message=verdict.message,
+        )
     if not rows:
         return QueryResult(
             status="error",
