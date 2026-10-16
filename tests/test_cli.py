@@ -257,6 +257,9 @@ def test_scheduler_slot_is_normalised_and_idempotent(capsys):
         ("collect", "--trigger", "scheduler", "--slot", "2026-10-16T12:00:00"),
         ("collect", "--trigger", "probe"),
         ("collect", "--trigger", "scheduler", "--slot", ""),
+        # WR-03: no UTC equivalent -> used to escape argparse as an OverflowError traceback
+        ("collect", "--slot", "0001-01-01T00:00:00+05:00"),
+        ("collect", "--trigger", "scheduler", "--slot", "9999-12-31T23:00:00-05:00"),
     ],
 )
 def test_bad_trigger_or_slot_is_a_usage_error(argv):

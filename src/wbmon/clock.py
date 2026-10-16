@@ -40,11 +40,15 @@ def floor_hour(dt: datetime) -> datetime:
 def parse_slot(text: str) -> str:
     """Normalise an aware ISO-8601 time to the floored-hour ``iso_z`` slot (UTC).
 
-    Naive or unparsable input raises ``ValueError`` so a slot can never be guessed.
+    Naive, unparsable or out-of-range input (e.g. ``0001-01-01T00:00:00+05:00``, which has no UTC
+    equivalent) raises ``ValueError`` so a slot can never be guessed.
     """
     candidate = text.strip()
     if candidate[-1:] in ("Z", "z"):
         candidate = candidate[:-1] + "+00:00"
     parsed = datetime.fromisoformat(candidate)
     _require_aware(parsed)
-    return iso_z(floor_hour(parsed.astimezone(UTC)))
+    try:
+        return iso_z(floor_hour(parsed.astimezone(UTC)))
+    except OverflowError:
+        raise ValueError(f"time is outside the representable UTC range: {text!r}") from None

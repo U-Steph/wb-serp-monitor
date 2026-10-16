@@ -465,3 +465,9 @@ def test_record_query_rejects_rows_on_failed_status(tmp_path):
                 QueryResult(status="error", started_at="t", duration_ms=0, observations=(row,)),
             )
         assert con.execute("SELECT COUNT(*) FROM run_queries").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("text", ["0001-01-01T00:00:00+05:00", "9999-12-31T23:00:00-05:00"])
+def test_parse_slot_out_of_range_is_a_value_error(text):
+    with pytest.raises(ValueError, match="UTC range"):
+        parse_slot(text)
