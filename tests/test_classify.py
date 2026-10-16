@@ -352,11 +352,11 @@ def test_collect_products_without_integer_ids_is_schema_drift():
     payload = make_page(900000001, 3)
     for product in payload["data"]["products"]:
         product["id"] = "not-an-id"
-    result, _ = run_collect(json_response(payload))
+    result, _ = run_collect(json_response(payload), top_n=3)
     assert (result.status, result.error_class) == ("error", "schema_drift")
     assert result.error_message == "no product with an integer id"
     assert result.observations == ()
-    assert result.pages_fetched == 0
+    assert result.pages_fetched == 1  # the page itself was fetched fine; it held no usable id
 
 
 def test_collector_uses_the_classifier():
