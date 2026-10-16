@@ -14,18 +14,29 @@ from wbmon.clock import parse_iso_z
 from wbmon.delivery import delivery_days
 from wbmon.models import ObservationRow
 
+# SQLite stores INTEGER as a signed 64-bit value; anything outside that range is "unknown" (NULL)
+# rather than an OverflowError that would abort the whole query write.
+INT64_MAX = 2**63 - 1
+
 
 def to_int(v: object) -> int | None:
-    """Coerce an int-like value (int, whole float, digit string) to int; otherwise ``None``."""
+    """Coerce an int-like value (int, whole float, digit string) to int; otherwise ``None``.
+
+    Values outside the signed 64-bit range cannot be stored by SQLite and become ``None``.
+    """
     if isinstance(v, bool):
         return None
     if isinstance(v, int):
-        return v
-    if isinstance(v, float):
-        return int(v) if v.is_integer() else None
-    if isinstance(v, str) and v.strip().lstrip("-").isdigit():
-        return int(v)
-    return None
+        result = v
+    elif isinstance(v, float):
+        if not v.is_integer():
+            return None
+        result = int(v)
+    elif isinstance(v, str) and v.strip().lstrip("-").isdigit():
+        result = int(v)
+    else:
+        return None
+    return result if -INT64_MAX <= result <= INT64_MAX else None
 
 
 def to_float(v: object) -> float | None:
@@ -33,7 +44,10 @@ def to_float(v: object) -> float | None:
     if isinstance(v, bool):
         return None
     if isinstance(v, (int, float)):
-        result = float(v)
+        try:
+            result = float(v)
+        except OverflowError:  # a JSON integer with hundreds of digits
+            return None
     elif isinstance(v, str):
         try:
             result = float(v)
@@ -45,8 +59,14 @@ def to_float(v: object) -> float | None:
 
 
 def to_str(v: object) -> str | None:
-    """Return ``v`` only when it is a string."""
-    return v if isinstance(v, str) else None
+    """Return ``v`` only when it is a string SQLite can store as UTF-8 (no lone surrogates)."""
+    if not isinstance(v, str):
+        return None
+    try:
+        v.encode("utf-8")
+    except UnicodeEncodeError:  # JSON "\ud800" decodes to an unpaired surrogate
+        return None
+    return v
 
 
 def extract_products(payload: object) -> list | None:
@@ -191,7 +211,7 @@ def normalize_product(
         rating = None
     time1, time2 = _delivery_times(raw)
     hours = time1 + time2 if time1 is not None and time2 is not None else None
-    if hours is not None and (time1 < 0 or time2 < 0):
+    if hours is not None and (time1 < 0 or time2 < 0 or hours > INT64_MAX):
         hours = None
     days = delivery_days(parse_iso_z(collected_at), hours, tz)
     log = _ad_log(raw)

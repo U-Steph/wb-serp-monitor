@@ -105,9 +105,10 @@ class Writer:
     def record_query(self, run_id: int, query_id: int, result: QueryResult) -> str:
         """Write the ``run_queries`` row and its observations in one transaction.
 
-        Returns the stored status. If the transaction fails (any ``sqlite3.Error``) nothing of
-        this query is kept; a separate ``error`` / ``db_write_failed`` row records the attempt
-        and ``"error"`` is returned. If that fallback row cannot be written either (for example
+        Returns the stored status. If the transaction fails (a ``sqlite3.Error``, or a value
+        SQLite cannot bind: ``OverflowError`` / ``ValueError``) nothing of this query is kept;
+        a separate ``error`` / ``db_write_failed`` row records the attempt and ``"error"`` is
+        returned. If that fallback row cannot be written either (for example
         the (run, query) pair already exists) the exception propagates.
         """
         if result.observations and result.status not in ("ok", "partial"):
@@ -136,7 +137,7 @@ class Writer:
                         INSERT_OBSERVATION_SQL,
                         [row.as_params(run_id, query_id) for row in result.observations],
                     )
-        except sqlite3.Error as exc:
+        except (sqlite3.Error, OverflowError, ValueError) as exc:
             # _transaction has rolled back: no partial rows. Keep the failure visible.
             failure = {
                 **params,

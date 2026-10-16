@@ -352,3 +352,24 @@ def test_lock_held_by_another_process_and_freed_by_sigkill(tmp_path):
         for stream in (proc.stdin, proc.stdout):
             if stream is not None:
                 stream.close()
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    [10**30, "\ud800"],
+    ids=["int-over-64-bits", "unpaired-surrogate"],
+)
+def test_unbindable_value_falls_back_to_db_write_failed_row(con, writer, bad_value):
+    """OverflowError / UnicodeEncodeError are not sqlite3.Error but must not escape (CR-01)."""
+    query_id = writer.upsert_queries(["alpha"], T0)["alpha"]
+    run_id = new_run(writer)
+    column = "feedbacks" if isinstance(bad_value, int) else "name"
+    bad = result("ok", observations=(obs(1, **{column: bad_value}),), normquery="alpha")
+
+    assert writer.record_query(run_id, query_id, bad) == "error"
+
+    assert con.in_transaction is False
+    assert count(con, "observations") == 0
+    assert con.execute(
+        "SELECT status, error_class, items_collected FROM run_queries"
+    ).fetchall() == [("error", "db_write_failed", 0)]

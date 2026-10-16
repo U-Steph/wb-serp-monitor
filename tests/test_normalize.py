@@ -444,3 +444,61 @@ def test_collect_cli_stores_complete_rows_from_a_wb_shaped_page():
     assert [row[14] for row in rows] == [29, 29, 109]
     for row in rows:
         assert row[15] == delivery_days(parse_iso_z(row[16]), row[14])
+
+
+# ------------------------------------------------------------------ CR-01: out-of-range numbers
+
+
+def test_to_int_bounds_values_to_what_sqlite_can_store():
+    from wbmon.normalize import INT64_MAX, to_int
+
+    assert to_int(INT64_MAX) == INT64_MAX
+    assert to_int(-INT64_MAX) == -INT64_MAX
+    assert to_int(INT64_MAX + 1) is None
+    assert to_int(10**30) is None
+    assert to_int(str(10**30)) is None
+    assert to_int(1e30) is None
+    assert to_int(float("inf")) is None
+
+
+def test_to_float_survives_a_huge_json_integer():
+    from wbmon.normalize import to_float
+
+    assert to_float(10**400) is None
+    assert to_float("1e999") is None
+
+
+def test_to_str_rejects_unpaired_surrogates():
+    from wbmon.normalize import to_str
+
+    assert to_str("\ud800") is None
+    assert to_str("ТЕСТ ё") == "ТЕСТ ё"
+
+
+def test_rub_of_an_out_of_range_amount_is_null_not_an_exception():
+    assert rub(10**30) is None
+    assert rub(2**63 - 1) is not None
+
+
+def test_out_of_range_fields_become_null_but_the_product_is_kept():
+    raw = {
+        "id": 900000001,
+        "feedbacks": 10**30,
+        "supplierId": 2**70,
+        "time1": 2**63 - 1,
+        "time2": 2**63 - 1,
+        "sizes": [{"price": {"product": 10**30, "basic": 10**30}}],
+    }
+    row = normalize_product(raw, position=1, collected_at=COLLECTED_AT, tz=MSK)
+    assert row is not None
+    assert row.nm_id == 900000001
+    assert row.feedbacks is None
+    assert row.seller_id is None
+    assert row.price_rub is None
+    assert row.delivery_hours is None  # the sum would not fit an SQLite INTEGER
+    assert row.delivery_days is None
+    assert row.time1_h == 2**63 - 1
+
+
+def test_out_of_range_product_id_is_skipped_not_fatal():
+    assert normalize_product({"id": 10**30}, position=1, collected_at=COLLECTED_AT, tz=MSK) is None

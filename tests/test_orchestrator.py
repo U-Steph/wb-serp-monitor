@@ -491,3 +491,29 @@ def test_orchestrator_has_no_shuffle_or_jitter():
     assert "shuffle" not in source
     assert "random" not in source
     assert "BREAKER_THRESHOLD = 3" in source
+
+
+def test_out_of_range_number_in_a_payload_does_not_cost_the_query_or_the_run():
+    """CR-01: one id of 10**30 used to raise OverflowError out of the writer and abort the run."""
+    qs = bundled()[:3]
+    poisoned = make_page(900000001, 5)
+    poisoned["data"]["products"][1]["id"] = 10**30
+    poisoned["data"]["products"][2]["feedbacks"] = 10**30
+    fake = FakeWB(
+        {
+            (qs[0], 1): [json_response(poisoned)],
+            (qs[1], 1): [ok_page(900001001)],
+            (qs[2], 1): [ok_page(900002001)],
+        }
+    )
+
+    run_id, _ = run(fake, limit_queries=3)
+
+    stored = query_rows(run_id)
+    assert [r["status"] for r in stored] == ["ok", "ok", "ok"]
+    assert stored[0]["items_collected"] == 4  # the product without a usable id is skipped
+    assert run_row(run_id)["status"] == "ok"
+    assert rows(
+        "SELECT feedbacks FROM observations WHERE query_id = ? AND position = 3",
+        stored[0]["query_id"],
+    ) == [{"feedbacks": None}]
