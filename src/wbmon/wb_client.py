@@ -14,8 +14,11 @@ from datetime import datetime
 import httpx
 
 from wbmon import clock
+from wbmon.classify import DEFAULT_RETRY_AFTER, RETRY_AFTER_CAP, parse_retry_after
 from wbmon.config import Settings
 from wbmon.models import PageFetch
+
+RETRY_BACKOFF = (2.0, 5.0)  # fixed sleeps before the 1st and 2nd retry of a transient failure
 
 
 class NoCookiesPolicy(http.cookiejar.CookiePolicy):
@@ -82,13 +85,40 @@ class WbClient:
         return self._requests_made
 
     def fetch_page(self, query: str, page: int, *, retry: bool = True) -> PageFetch:
-        """Fetch one SERP page with a single attempt.
+        """Fetch one SERP page, politely and with bounded, status-specific retries.
 
-        Sleeps ``request_delay`` before every request except the first of this client. The
-        ``retry`` flag is reserved for the bounded-retry policy added later.
+        Sleeps ``request_delay`` before the request (not before this client's first request, and
+        no jitter). With ``retry`` enabled: a transport error or 5xx is retried at most twice
+        after ``RETRY_BACKOFF`` seconds; a 429 is retried once after ``min(Retry-After or 30, 60)``
+        seconds. 403 / 498 / 3xx / other 4xx are never retried: they are data, not glitches.
+        ``attempts`` on the result counts the requests sent for this page.
         """
         if self._requests_made > 0:
             self._sleep(self._settings.request_delay)
+        attempts = 0
+        transient_retries = 0
+        rate_limit_retried = False
+        while True:
+            attempts += 1
+            fetch = self._send(query, page, attempts)
+            if not retry:
+                return fetch
+            transient = fetch.transport_error is not None or (
+                fetch.status_code is not None and 500 <= fetch.status_code < 600
+            )
+            if transient and transient_retries < len(RETRY_BACKOFF):
+                self._sleep(RETRY_BACKOFF[transient_retries])
+                transient_retries += 1
+                continue
+            if fetch.status_code == 429 and not rate_limit_retried:
+                wait = parse_retry_after(fetch.retry_after, self._now())
+                self._sleep(min(DEFAULT_RETRY_AFTER if wait is None else wait, RETRY_AFTER_CAP))
+                rate_limit_retried = True
+                continue
+            return fetch
+
+    def _send(self, query: str, page: int, attempts: int) -> PageFetch:
+        """Send one request and wrap whatever came back (or the transport failure)."""
         self._requests_made += 1
         started = self._monotonic()
         status_code: int | None = None
@@ -108,7 +138,6 @@ class WbClient:
             server = response.headers.get("server")
             retry_after = response.headers.get("retry-after")
             content = response.content
-        received_at = clock.iso_z(self._now())
         return PageFetch(
             query=query,
             page=page,
@@ -117,8 +146,8 @@ class WbClient:
             server=server,
             retry_after=retry_after,
             content=content,
-            received_at=received_at,
-            elapsed_ms=int((self._monotonic() - started) * 1000),
-            attempts=1,
+            received_at=clock.iso_z(self._now()),
+            elapsed_ms=max(0, int((self._monotonic() - started) * 1000)),
+            attempts=attempts,
             transport_error=transport_error,
         )

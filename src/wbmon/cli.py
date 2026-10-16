@@ -1,4 +1,4 @@
-"""Command line interface: ``wbmon init-db`` and ``wbmon collect``.
+"""Command line interface: ``wbmon init-db``, ``wbmon collect`` and ``wbmon probe``.
 
 Exit codes: 0 success, 2 usage/config error, 1 crash.
 """
@@ -7,18 +7,23 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import logging
 import sys
 import time
 from collections.abc import Sequence
 from pathlib import Path
 
+from wbmon.classify import classify_page
 from wbmon.config import ConfigError, Settings
 from wbmon.log import configure_logging, log_event
+from wbmon.normalize import extract_normquery, payload_shape
 from wbmon.orchestrator import run_once
+from wbmon.queries import load_bundled
 from wbmon.storage.db import connect_rw
 from wbmon.storage.migrations import init_db
 from wbmon.storage.reader import run_summary
+from wbmon.wb_client import WbClient, make_http_client
 
 
 def _positive_int(text: str) -> int:
@@ -46,6 +51,10 @@ def build_parser() -> argparse.ArgumentParser:
     collect.add_argument(
         "--limit-queries", type=_positive_int, help="only the first N queries (smoke runs)"
     )
+    probe = sub.add_parser(
+        "probe", help="send one page-1 request, print the classified outcome, write nothing"
+    )
+    probe.add_argument("--query", help="query text (default: the first bundled query)")
     return parser
 
 
@@ -55,6 +64,32 @@ def _line_buffer_stdout() -> None:
         sys.stdout.reconfigure(line_buffering=True, encoding="utf-8")  # type: ignore[union-attr]
     except (AttributeError, ValueError, OSError):
         pass
+
+
+def _probe(settings: Settings, query: str | None, *, transport, sleep) -> int:
+    """Send exactly one page-1 request (no retry) and print one JSON line; touches no database."""
+    text = query if query is not None else load_bundled()[0]
+    with make_http_client(settings, transport=transport) as http:
+        fetch = WbClient(http, settings, sleep=sleep).fetch_page(text, 1, retry=False)
+    verdict = classify_page(fetch)
+    summary = {
+        "outcome": verdict.outcome,
+        "error_class": verdict.error_class,
+        "http_status": fetch.status_code,
+        "server": fetch.server,
+        "content_type": fetch.content_type,
+        "products": len(verdict.products) or None if verdict.products is not None else None,
+        "normquery": extract_normquery(verdict.payload) if verdict.payload else None,
+        "shape": payload_shape(verdict.payload) if verdict.payload else None,
+        "elapsed_ms": fetch.elapsed_ms,
+        "attempts": fetch.attempts,
+        "endpoint": settings.search_url,
+        "params": settings.search_params(text, 1),
+        "user_agent": settings.user_agent,
+        "message": verdict.message,
+    }
+    print(json.dumps(summary, ensure_ascii=False))
+    return 0
 
 
 def main(argv: Sequence[str] | None = None, *, _transport=None, _sleep=None) -> int:
@@ -79,6 +114,8 @@ def main(argv: Sequence[str] | None = None, *, _transport=None, _sleep=None) -> 
             version = init_db(settings.db_path)
             log_event("init_db", db=str(settings.db_path), schema_version=version)
             return 0
+        if args.command == "probe":
+            return _probe(settings, args.query, transport=_transport, sleep=_sleep or time.sleep)
         if args.command == "collect":
             run_id = run_once(
                 settings,
