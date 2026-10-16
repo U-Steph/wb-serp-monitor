@@ -68,6 +68,19 @@ STATUS_STYLE: dict[str, tuple[int, str, str]] = {
     "error": (5, "#6C757D", "E"),
 }
 MISSING_STYLE: tuple[int, str, str] = (0, "#FFFFFF", "")
+# Glyph colour per status (UI-SPEC status table): white on the dark fills, ink on the amber one.
+# A heatmap trace takes ONE text colour, so glyphs are drawn as text-mode scatter overlays, one
+# trace per colour (UI-4) instead of relying on Plotly's automatic contrast.
+GLYPH_LIGHT = "#FFFFFF"
+GLYPH_DARK = "#1A1D21"
+GLYPH_COLORS: dict[str, str] = {
+    "ok": GLYPH_LIGHT,
+    "partial": GLYPH_DARK,
+    "blocked": GLYPH_LIGHT,
+    "rate_limited": GLYPH_LIGHT,
+    "error": GLYPH_LIGHT,
+}
+HEATMAP_FONT = {"size": 14, "family": "Source Sans Pro, Source Sans 3, sans-serif"}
 MISSING_LABEL = "пусто — запрос не выполнялся"
 HEATMAP_CELL_PX = 20
 HEATMAP_FRAME_PX = 96  # top + bottom margin
@@ -280,19 +293,26 @@ def status_heatmap(runs: pd.DataFrame, matrix: pd.DataFrame, queries: pd.DataFra
     cells = {(int(r.query_id), int(r.run_id)): r for r in matrix.itertuples(index=False)}
     started = {int(r.run_id): _msk_text(r.started_at, texts.fmt_dt) for r in run_rows}
     z: list[list[int]] = []
-    glyphs: list[list[str]] = []
     hover: list[list[str]] = []
-    for q in query_rows:
+    overlays: dict[str, tuple[list[int], list[int], list[str]]] = {
+        GLYPH_LIGHT: ([], [], []),
+        GLYPH_DARK: ([], [], []),
+    }
+    for row_index, q in enumerate(query_rows):
         z_row: list[int] = []
-        glyph_row: list[str] = []
         hover_row: list[str] = []
-        for r in run_rows:
+        for col_index, r in enumerate(run_rows):
             cell = cells.get((int(q.query_id), int(r.run_id)))
             if cell is None:
-                code, _colour, glyph = MISSING_STYLE
+                code = MISSING_STYLE[0]
                 hover_row.append(_hover(str(q.text), started[int(r.run_id)], None, None, None))
             else:
-                code, _colour, glyph = STATUS_STYLE.get(str(cell.status), STATUS_STYLE["error"])
+                key = str(cell.status) if str(cell.status) in STATUS_STYLE else "error"
+                code, _colour, glyph = STATUS_STYLE[key]
+                xs, ys, glyphs = overlays[GLYPH_COLORS[key]]
+                xs.append(col_index)
+                ys.append(row_index)
+                glyphs.append(glyph)
                 hover_row.append(
                     _hover(
                         str(q.text),
@@ -303,9 +323,7 @@ def status_heatmap(runs: pd.DataFrame, matrix: pd.DataFrame, queries: pd.DataFra
                     )
                 )
             z_row.append(code)
-            glyph_row.append(glyph)
         z.append(z_row)
-        glyphs.append(glyph_row)
         hover.append(hover_row)
 
     fig = go.Figure(
@@ -313,9 +331,6 @@ def status_heatmap(runs: pd.DataFrame, matrix: pd.DataFrame, queries: pd.DataFra
             z=z,
             x=list(range(len(run_rows))),
             y=list(range(len(query_rows))),
-            text=glyphs,
-            texttemplate="%{text}",
-            textfont={"size": 14},
             customdata=hover,
             hovertemplate="%{customdata}<extra></extra>",
             colorscale=heatmap_colorscale(),
@@ -326,16 +341,26 @@ def status_heatmap(runs: pd.DataFrame, matrix: pd.DataFrame, queries: pd.DataFra
             ygap=1,
         )
     )
+    for colour, (xs, ys, glyphs) in overlays.items():
+        if xs:
+            fig.add_trace(
+                go.Scatter(
+                    x=xs,
+                    y=ys,
+                    text=glyphs,
+                    mode="text",
+                    textposition="middle center",
+                    textfont={**HEATMAP_FONT, "color": colour},
+                    hoverinfo="skip",
+                    showlegend=False,
+                )
+            )
     fig.update_layout(
         height=HEATMAP_CELL_PX * len(query_rows) + HEATMAP_FRAME_PX,
         margin={"l": 248, "r": 16, "t": 92, "b": 4},
         plot_bgcolor=HEATMAP_BACKGROUND,
         paper_bgcolor="#FFFFFF",
-        font={
-            "size": 14,
-            "color": TEXT_COLOR,
-            "family": "Source Sans Pro, Source Sans 3, sans-serif",
-        },
+        font={**HEATMAP_FONT, "color": TEXT_COLOR},
         xaxis={
             "side": "top",
             "tickangle": -90,

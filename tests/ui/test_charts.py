@@ -14,8 +14,10 @@ from ui.dbbuilder import (
     NM,
     Q1,
     Q2,
+    Q3,
     RunSpec,
     build_db,
+    failed_result,
     ok_result,
     scenario_all_blocked,
     scenario_mixed,
@@ -370,9 +372,21 @@ def mixed_heatmap(db_path):
     return heatmap_of(scenario_mixed, db_path)
 
 
+def glyph_cells(fig) -> dict[tuple[int, int], tuple[str, str]]:
+    """``{(x, y): (glyph, colour)}`` read from the text overlays of a status heatmap."""
+    cells: dict[tuple[int, int], tuple[str, str]] = {}
+    for trace in fig.data[1:]:
+        assert trace.type == "scatter" and trace.mode == "text"
+        assert trace.hoverinfo == "skip" and trace.showlegend is False
+        assert trace.textfont.size == 14
+        for x, y, glyph in zip(trace.x, trace.y, trace.text, strict=True):
+            assert (x, y) not in cells
+            cells[(x, y)] = (glyph, trace.textfont.color)
+    return cells
+
+
 def test_heatmap_cells_are_codes_and_glyphs_oldest_to_newest(mixed_heatmap):
     _built, fig, *_ = mixed_heatmap
-    assert len(fig.data) == 1
     trace = fig.data[0]
     assert trace.type == "heatmap"
     assert [list(row) for row in trace.z] == [
@@ -380,13 +394,37 @@ def test_heatmap_cells_are_codes_and_glyphs_oldest_to_newest(mixed_heatmap):
         [1, 1, 1, 1, 1, 1],
         [1, 1, 1, 1, 1, 1],
     ]
-    assert list(trace.text[0]) == ["✓", "✕", "✓", "~", "✓", "✓"]
-    assert trace.texttemplate == "%{text}"
-    assert trace.textfont.size == 14
-    assert trace.textfont.color is None
+    cells = glyph_cells(fig)
+    assert [cells[(x, 0)][0] for x in range(6)] == ["✓", "✕", "✓", "~", "✓", "✓"]
+    assert len(cells) == 18
+    assert trace.text is None and trace.texttemplate is None  # the overlays carry the glyphs
     assert trace.showscale is False
     assert (trace.zmin, trace.zmax) == (-0.5, 5.5)
     assert (trace.xgap, trace.ygap) == (1, 1)
+
+
+def test_heatmap_glyph_colours_follow_the_status_table(db_path):
+    """UI-4: white glyphs on the dark fills, ink on amber; set explicitly, never auto-contrast."""
+    started = "2026-10-16T09:00:00Z"
+    results = {
+        Q1: ok_result(started, (A,)),
+        Q2: ok_result(started, (A,), complete=False, status="partial", error_class="http_5xx"),
+        Q3: failed_result(started),
+    }
+    build_db(db_path, [RunSpec(started, results, n_queries=3)])
+    path = str(db_path)
+    runs, matrix = data.load_status_matrix_raw(path)
+    fig = charts.status_heatmap(runs, matrix, data.load_queries_raw(path))
+    cells = glyph_cells(fig)
+    assert cells[(0, 0)] == ("✓", "#FFFFFF")
+    assert cells[(0, 1)] == ("~", "#1A1D21")
+    assert cells[(0, 2)] == ("✕", "#FFFFFF")
+
+
+def test_every_status_style_has_an_explicit_glyph_colour():
+    assert set(charts.GLYPH_COLORS) == set(charts.STATUS_STYLE)
+    assert charts.GLYPH_COLORS["partial"] == "#1A1D21"
+    assert {v for k, v in charts.GLYPH_COLORS.items() if k != "partial"} == {"#FFFFFF"}
 
 
 def test_heatmap_colorscale_is_stepped_and_matches_the_status_table():
@@ -471,7 +509,7 @@ def test_heatmap_cell_without_an_attempt_is_empty(db_path):
     assert len(matrix) == 1  # only Q1 was attempted
     trace = charts.status_heatmap(runs, matrix, queries).data[0]
     assert [list(row) for row in trace.z] == [[1], [0], [0]]
-    assert list(trace.text[1]) == [""]
+    assert glyph_cells(charts.status_heatmap(runs, matrix, queries)) == {(0, 0): ("✓", "#FFFFFF")}
     assert f"{Q2}<br>" in trace.customdata[1][0]
     assert "Статус: пусто — запрос не выполнялся" in trace.customdata[1][0]
 
@@ -496,7 +534,8 @@ def test_heatmap_of_an_all_blocked_history_is_a_full_red_field(db_path):
     _built, fig, *_ = heatmap_of(scenario_all_blocked, db_path)
     trace = fig.data[0]
     assert all(code == 3 for row in trace.z for code in row)
-    assert all(glyph == "✕" for row in trace.text for glyph in row)
+    cells = glyph_cells(fig)
+    assert len(cells) == 9 and set(cells.values()) == {("✕", "#FFFFFF")}
     assert len(trace.z) == 3 and len(trace.z[0]) == 3
 
 

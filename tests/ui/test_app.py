@@ -900,7 +900,9 @@ def test_mixed_run_log_leads_with_badges_and_the_heatmap(db_path):
     assert heatmap_z(at)[0] == [1, 3, 1, 2, 1, 1]
     assert heatmap_z(at)[1:] == [[1] * 6, [1] * 6]
     (spec,) = heatmap_specs(at)
-    assert spec["data"][0]["texttemplate"] == "%{text}"
+    overlays = spec["data"][1:]
+    assert overlays and all(t["type"] == "scatter" and t["mode"] == "text" for t in overlays)
+    assert {t["textfont"]["color"] for t in overlays} == {"#FFFFFF", "#1A1D21"}
     assert spec["layout"]["height"] == 156
     markdown = markdown_values(at)
     summary = next(v for v in markdown if v.startswith("Последние 6 сборов"))
@@ -941,7 +943,7 @@ def test_all_blocked_history_is_a_full_red_field_with_explanations(db_path):
     z = heatmap_z(at)
     assert len(z) == 3 and all(len(row) == 3 and set(row) == {3} for row in z)
     (spec,) = heatmap_specs(at)
-    assert {g for row in spec["data"][0]["text"] for g in row} == {"✕"}
+    assert {g for t in spec["data"][1:] for g in t["text"]} == {"✕"}
     assert has([w.value for w in at.warning], "Wildberries отклоняет запросы сборщика")
     attempts = [e.value for e in at.dataframe if "Причина" in e.value.columns]
     assert len(attempts) == 2  # one under the positions tab, one under the snapshot tab
