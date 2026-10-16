@@ -155,7 +155,7 @@ Plans:
 
 Plans:
 
-- [ ] 04-01: TBD (to be created by /gsd-plan-phase 4)
+- [x] 04-01: TBD (to be created by /gsd-plan-phase 4)
 
 **Notes**:
 

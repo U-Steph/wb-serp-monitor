@@ -1,7 +1,7 @@
 ---
 phase: 03-web-ui
 verified: 2026-10-16T18:30:00Z
-status: human_needed
+status: passed
 score: 5/5 must-haves verified
 overrides_applied: 0
 deferred:
@@ -127,3 +127,17 @@ No gaps. All five ROADMAP success criteria and all 13 requirement IDs are backed
 
 _Verified: 2026-10-16_
 _Verifier: Claude (gsd-verifier)_
+
+
+## Orchestrator visual check (2026-10-16, after review fixes)
+
+Performed in a headless Chromium (gstack browse) against a temporary synthetic `visual_check`
+database (test data only, deleted afterwards), app served on 127.0.0.1:
+- «Позиции»: position 1 on top, grey failed-run bands, ◆ ad markers, honest gaps, freshness badge,
+  sidebar totals — OK. Defect found: legend entries overlapped (VIS-1) → fixed in 796ff44
+  (fixed `entrywidth` in pixels); prices showed an English thousands comma (VIS-2) → fixed in 2542c26.
+  Re-checked after the fixes: legend renders in two clean columns.
+- «Выдача», «Журнал сборов» (heatmap 70 × 48 with glyphs + legend), «О сервисе» — render without errors.
+- CSV opening in Excel was not checked visually (no Excel on the host); covered by the utf-8-sig/`;`/decimal-comma round-trip test.
+
+Status set to passed by the orchestrator.
