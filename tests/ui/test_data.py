@@ -366,13 +366,71 @@ def test_run_grid_leaves_out_runs_that_never_reached_the_query(db_path):
     assert r7 not in set(data.load_run_grid_raw(str(db_path), q[Q3], 3, "")["run_id"])
 
 
-def test_run_grid_keeps_an_abandoned_run_that_planned_the_query(db_path):
+def test_run_grid_keeps_an_abandoned_run_inside_the_span_of_the_query(db_path):
+    """An abandoned run that planned the query and sits between two attempts is a real gap."""
     built = scenario_latest(db_path, "abandoned")
     r7 = built.run_ids[-1]
+    started = iso_z(utc_now() - timedelta(minutes=1))
+    full = RunSpec(
+        started,
+        {text: ok_result(started, Q2_IDS) for text in (Q1, Q2, Q3)},
+        trigger="manual",
+        n_queries=3,
+    )
+    r8 = append_run(db_path, full)
     grid = data.load_run_grid_raw(str(db_path), built.query_ids[Q2], 2, "")
+    assert list(grid["run_id"])[-2:] == [r7, r8]
     row = grid[grid["run_id"] == r7].iloc[0]
     assert row["run_status"] == "abandoned"
     assert row["q_status"] is None or row["q_status"] is pd.NA or pd.isna(row["q_status"])
+
+
+def test_run_grid_drops_a_trailing_abandoned_run_after_the_last_attempt(db_path):
+    """Nothing proves the query was still being collected after its last attempt (CR-01)."""
+    built = scenario_latest(db_path, "abandoned")
+    grid = data.load_run_grid_raw(str(db_path), built.query_ids[Q2], 2, "")
+    assert built.run_ids[-1] not in set(grid["run_id"])
+    assert list(grid["run_id"]) == built.run_ids[:-1]
+
+
+def test_run_grid_of_a_query_inserted_at_the_top_has_no_false_failure_bands(db_path):
+    """CR-01: a new first sheet row gets sheet_order 1 and must not claim the old runs failed."""
+    built = scenario_mixed(db_path)
+    started = iso_z(utc_now() - timedelta(minutes=1))
+    fresh = "новый запрос в начале таблицы"
+    spec = RunSpec(
+        started,
+        {fresh: ok_result(started, (A, B)), Q1: ok_result(started, (A,))},
+        trigger="manual",
+        n_queries=4,
+    )
+    new_run = append_run(db_path, spec, (fresh, Q1, Q2, Q3))
+    fresh_id = scalar(db_path, "SELECT id FROM queries WHERE text = ?", (fresh,))
+    grid = data.load_run_grid_raw(str(db_path), fresh_id, 1, "")
+    assert list(grid["run_id"]) == [new_run]
+    assert list(grid["q_status"]) == ["ok"]
+    # the old queries keep their full history (their span is unchanged)
+    old = data.load_run_grid_raw(str(db_path), built.query_ids[Q1], 2, "")
+    assert list(old["run_id"]) == [*built.run_ids, new_run]
+
+
+def test_run_grid_of_a_query_dropped_from_the_sheet_stops_at_its_last_attempt(db_path):
+    """CR-01: a removed query keeps its old sheet_order; new runs must not paint bands for it."""
+    built = scenario_mixed(db_path)
+    started = iso_z(utc_now() - timedelta(minutes=1))
+    other, more = "другой запрос", "ещё один запрос"
+    spec = RunSpec(
+        started,
+        {text: ok_result(started, (A, B)) for text in (Q1, Q2, other, more)},
+        trigger="manual",
+        n_queries=4,
+    )
+    append_run(db_path, spec, (Q1, Q2, other, more))
+    q3 = built.query_ids[Q3]
+    assert scalar(db_path, "SELECT sheet_order FROM queries WHERE id = ?", (q3,)) == 3
+    grid = data.load_run_grid_raw(str(db_path), q3, 3, "")
+    assert list(grid["run_id"]) == built.run_ids
+    assert not grid["q_status"].isna().any()
 
 
 def test_run_grid_leaves_out_a_limited_manual_run(db_path):

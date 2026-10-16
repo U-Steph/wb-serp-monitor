@@ -71,9 +71,12 @@ LIMIT 1
 _HAS_RUNS_SQL = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'runs'"
 
 QUERIES_SQL = "SELECT id AS query_id, text, sheet_order FROM queries ORDER BY sheet_order, id"
-# The last predicate is the honest-gap rule for runs that never looked at this query: a run in
-# flight that has not reached it, or a limited manual run, adds neither a point nor a band, while
-# an abandoned run that planned the query (sheet_order <= n_queries) but has no attempt row does.
+# The last predicates are the honest-gap rule for runs that never looked at this query. A run in
+# flight that has not reached it, or a limited manual run, adds neither a point nor a band. A run
+# without an attempt row counts as "should have looked" (an abandoned run that planned the query,
+# sheet_order <= n_queries) only INSIDE the span of run ids in which the query has attempt rows:
+# sheet_order is not a stable identity (the writer rewrites it every run), so outside that span a
+# missing row proves nothing (the query was not on the sheet yet, or has left it).
 RUN_GRID_SQL = """
 SELECT r.id AS run_id, r.started_at, r.status AS run_status, r.trigger,
        rq.status AS q_status, rq.error_class, rq.http_status, rq.items_collected,
@@ -81,7 +84,15 @@ SELECT r.id AS run_id, r.started_at, r.status AS run_status, r.trigger,
 FROM runs r
 LEFT JOIN run_queries rq ON rq.run_id = r.id AND rq.query_id = :q
 WHERE r.started_at >= :since
-  AND (rq.id IS NOT NULL OR (r.status <> 'running' AND :sheet_order <= r.n_queries))
+  AND (
+    rq.id IS NOT NULL
+    OR (
+      r.status <> 'running'
+      AND :sheet_order <= r.n_queries
+      AND r.id >= (SELECT MIN(run_id) FROM run_queries WHERE query_id = :q)
+      AND r.id <= (SELECT MAX(run_id) FROM run_queries WHERE query_id = :q)
+    )
+  )
 ORDER BY r.started_at, r.id
 """
 PRODUCT_OPTIONS_SQL = """
