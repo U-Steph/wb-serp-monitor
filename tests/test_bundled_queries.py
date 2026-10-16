@@ -63,3 +63,29 @@ def test_cyrillic_and_latin_x_are_kept_distinct():
         assert "х" in lines[number - 1]
         assert "x" not in lines[number - 1]
     assert "x" in lines[65] and "х" not in lines[65]
+
+
+def test_crlf_checkout_yields_the_same_70_queries():
+    """IN-04: a core.autocrlf checkout must not put a trailing CR on every query."""
+    from wbmon.queries import load_bundled, split_bundled
+
+    crlf_text = _raw().decode("utf-8").replace("\n", "\r\n")
+    assert "\r\n" in crlf_text
+
+    assert split_bundled(crlf_text) == load_bundled()
+    assert len(load_bundled()) == 70
+    assert not any("\r" in query for query in load_bundled())
+
+
+def test_split_bundled_only_removes_line_terminators():
+    from wbmon.queries import split_bundled
+
+    assert split_bundled("a b \nc\r\n") == ("a b ", "c")
+    assert split_bundled("x\r\r\n") == ("x\r",)  # a lone inner CR is not ours to touch
+
+
+def test_gitattributes_pins_lf_for_the_data_file():
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parents[1] / ".gitattributes").read_text(encoding="utf-8")
+    assert "src/wbmon/data/*.txt text eol=lf" in text

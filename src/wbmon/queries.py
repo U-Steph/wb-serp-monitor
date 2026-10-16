@@ -26,11 +26,19 @@ SHEET_TOTAL_SECONDS = 30.0  # wall-clock cap for the whole export download
 def load_bundled() -> tuple[str, ...]:
     """Return the 70 bundled queries, one per line, exactly as stored in the package data."""
     raw = resources.files("wbmon").joinpath(BUNDLED_RESOURCE).read_bytes()
-    text = raw.decode("utf-8")
+    return split_bundled(raw.decode("utf-8"))
+
+
+def split_bundled(text: str) -> tuple[str, ...]:
+    """Split the bundled file into queries, accepting LF or CRLF line endings.
+
+    Only the line terminator is removed: a ``\\r`` before ``\\n`` belongs to a Windows checkout,
+    not to the query. Everything else stays byte-for-byte (QRY-02).
+    """
     lines = text.split("\n")
     if text.endswith("\n"):
         lines.pop()
-    return tuple(lines)
+    return tuple(line.removesuffix("\r") for line in lines)
 
 
 def parse_csv(text: str) -> tuple[str, ...]:

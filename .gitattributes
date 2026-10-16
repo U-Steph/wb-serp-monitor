@@ -1,0 +1,5 @@
+# The bundled query list is data: its bytes (LF endings, no trailing CR) are pinned by a test.
+# Force LF on every platform so a Windows checkout with core.autocrlf=true cannot add a "\r"
+# to each query that would then be sent to Wildberries and stored.
+* text=auto eol=lf
+src/wbmon/data/*.txt text eol=lf
