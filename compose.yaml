@@ -56,6 +56,9 @@ services:
   collector:
     <<: *wbmon
     command: ["wbmon", "scheduler"]
+    # PID 1 is a tiny init (tini): it forwards SIGTERM even before the Python handler is installed
+    # (the kernel ignores signals for a PID 1 without a handler) and reaps orphaned children.
+    init: true
     restart: unless-stopped
     # On SIGTERM the scheduler forwards SIGTERM and waits scheduler.STOP_GRACE_S (120 s: the longest request
     # already on the wire, wb_client.MAX_ATTEMPT_SECONDS = 100 s, plus 20 s to close the run) before SIGKILL.
@@ -83,6 +86,7 @@ services:
       - --server.port=8501
       - --server.headless=true
       - --browser.gatherUsageStats=false
+    init: true  # signal forwarding and zombie reaping for Streamlit, as for the collector
     restart: unless-stopped
     depends_on:
       init-db:

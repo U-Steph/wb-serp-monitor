@@ -293,6 +293,11 @@ def test_every_service_drops_all_capabilities_and_forbids_privilege_gain(compose
     assert "read_only" not in service
 
 
+@pytest.mark.parametrize("name", ["collector", "web"])
+def test_long_running_services_run_under_an_init_process(compose, name):
+    assert compose["services"][name]["init"] is True
+
+
 def test_only_caddy_gets_a_capability_back_and_only_the_bind_one(compose):
     assert compose["services"]["caddy"]["cap_add"] == ["NET_BIND_SERVICE"]
     for name in ROLES:
