@@ -5,12 +5,15 @@ from __future__ import annotations
 import contextlib
 import json
 import sqlite3
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from ui.dbbuilder import (
+    NM,
     Q1,
     Q2,
     Q2_IDS,
@@ -27,6 +30,7 @@ from ui.dbbuilder import (
 from wbmon.clock import iso_z, utc_now
 from wbmon.storage.db import connect_ro
 from wbmon.storage.migrations import init_db
+from wbmon.storage.reader import MAX_IN_IDS
 from wbmon.ui import data
 
 RUN_LOG_COLUMNS = [
@@ -197,6 +201,12 @@ def test_every_loader_opens_one_connection_and_closes_it(db_path, monkeypatch):
         lambda: data.load_overview_raw(path),
         lambda: data.load_run_log_raw(path),
         lambda: data.load_latest_run_detail_raw(path, built.run_ids[-1]),
+        lambda: data.load_queries_raw(path),
+        lambda: data.load_run_grid_raw(path, built.query_ids[Q1], 1, ""),
+        lambda: data.load_product_options_raw(path, built.query_ids[Q1]),
+        lambda: data.load_latest_data_run_raw(path, built.query_ids[Q1]),
+        lambda: data.load_top_ids_raw(path, built.run_ids[0], built.query_ids[Q1], 3),
+        lambda: data.load_observations_raw(path, built.query_ids[Q1], (NM["A"],), ""),
     ]
     for call in calls:
         opened.clear()
@@ -284,3 +294,239 @@ def test_ui_data_never_uses_the_writer_stack():
     source = Path(data.__file__).read_text(encoding="utf-8")
     for forbidden in ("connect_rw", "storage.writer", "storage.migrations", "storage.lock"):
         assert forbidden not in source
+
+
+# ------------------------------------------------------------------- chart loaders (03-02)
+
+A, B, C, D, E, F = (NM[k] for k in "ABCDEF")
+GRID_COLUMNS = [
+    "run_id",
+    "started_at",
+    "run_status",
+    "trigger",
+    "q_status",
+    "error_class",
+    "http_status",
+    "items_collected",
+    "is_complete",
+    "pages_fetched",
+]
+OBS_COLUMNS = [
+    "run_id",
+    "collected_at",
+    "nm_id",
+    "position",
+    "is_promoted",
+    "price_rub",
+    "rating",
+    "feedbacks",
+    "delivery_days",
+    "seller_name",
+    "name",
+    "brand",
+]
+
+
+def test_load_queries_keeps_sheet_order_and_exact_wording(db_path):
+    scenario_mixed(db_path)
+    frame = data.load_queries_raw(str(db_path))
+    assert list(frame.columns) == ["query_id", "text", "sheet_order"]
+    assert list(frame["text"]) == [Q1, Q2, Q3]
+    assert list(frame["sheet_order"]) == [1, 2, 3]
+    assert "ё" in frame["text"][0]
+    assert "х" in frame["text"][1] and "x" not in frame["text"][1]  # Cyrillic, not Latin
+    assert "x" in frame["text"][2]
+
+
+def test_run_grid_of_the_first_query(db_path):
+    built = scenario_mixed(db_path)
+    grid = data.load_run_grid_raw(str(db_path), built.query_ids[Q1], 1, "")
+    assert list(grid.columns) == GRID_COLUMNS
+    assert list(grid["run_id"]) == built.run_ids
+    assert list(grid["q_status"]) == ["ok", "blocked", "ok", "partial", "ok", "ok"]
+    assert grid["http_status"][1] == 403
+    assert grid["is_complete"][3] == 0
+    assert list(grid["started_at"]) == sorted(grid["started_at"])
+
+
+def test_run_grid_since_keeps_runs_from_that_start(db_path):
+    built = scenario_mixed(db_path)
+    since = scalar(db_path, "SELECT started_at FROM runs WHERE id = ?", (built.run_ids[3],))
+    grid = data.load_run_grid_raw(str(db_path), built.query_ids[Q1], 1, since)
+    assert list(grid["run_id"]) == built.run_ids[3:]
+
+
+def test_run_grid_leaves_out_runs_that_never_reached_the_query(db_path):
+    """A run in flight has attempt rows only for the queries it reached so far."""
+    built = scenario_latest(db_path, "running")
+    r7 = built.run_ids[-1]
+    q = built.query_ids
+    assert r7 in set(data.load_run_grid_raw(str(db_path), q[Q1], 1, "")["run_id"])
+    assert r7 not in set(data.load_run_grid_raw(str(db_path), q[Q2], 2, "")["run_id"])
+    assert r7 not in set(data.load_run_grid_raw(str(db_path), q[Q3], 3, "")["run_id"])
+
+
+def test_run_grid_keeps_an_abandoned_run_that_planned_the_query(db_path):
+    built = scenario_latest(db_path, "abandoned")
+    r7 = built.run_ids[-1]
+    grid = data.load_run_grid_raw(str(db_path), built.query_ids[Q2], 2, "")
+    row = grid[grid["run_id"] == r7].iloc[0]
+    assert row["run_status"] == "abandoned"
+    assert row["q_status"] is None or row["q_status"] is pd.NA or pd.isna(row["q_status"])
+
+
+def test_run_grid_leaves_out_a_limited_manual_run(db_path):
+    started = iso_z(utc_now() - timedelta(minutes=20))
+    limited = RunSpec(started, {Q1: ok_result(started, (A, B))}, trigger="manual", n_queries=1)
+    built = build_db(db_path, [limited])
+    grid1 = data.load_run_grid_raw(str(db_path), built.query_ids[Q1], 1, "")
+    grid2 = data.load_run_grid_raw(str(db_path), built.query_ids[Q2], 2, "")
+    assert list(grid1["run_id"]) == built.run_ids
+    assert grid2.empty
+
+
+def test_product_options_one_row_per_product(db_path):
+    built = scenario_mixed(db_path)
+    options = data.load_product_options_raw(str(db_path), built.query_ids[Q1])
+    assert list(options.columns) == [
+        "nm_id",
+        "n_seen",
+        "best_position",
+        "worst_position",
+        "last_at",
+        "last_run_id",
+        "last_position",
+        "last_promoted",
+        "name",
+        "brand",
+    ]
+    assert sorted(options["nm_id"]) == sorted([A, B, C, D, E, F])
+    a = options[options["nm_id"] == A].iloc[0]
+    assert (a["best_position"], a["worst_position"]) == (1, 2)
+    assert (a["last_run_id"], a["last_position"]) == (built.run_ids[-1], 1)
+    assert options[options["nm_id"] == F].iloc[0]["last_run_id"] == built.run_ids[4]
+
+
+def test_product_options_count_a_repeated_product_once(db_path):
+    started = iso_z(utc_now() - timedelta(minutes=20))
+    result = ok_result(started, (A, B, C, D, E, F, 900000107))
+    rows = list(result.observations)
+    rows[6] = replace(rows[6], nm_id=A)
+    dup = replace(result, observations=tuple(rows))
+    built = build_db(db_path, [RunSpec(started, {Q1: dup}, n_queries=3)])
+    options = data.load_product_options_raw(str(db_path), built.query_ids[Q1])
+    row = options[options["nm_id"] == A]
+    assert len(row) == 1
+    assert row.iloc[0]["n_seen"] == 2
+    assert (row.iloc[0]["best_position"], row.iloc[0]["worst_position"]) == (1, 7)
+    assert row.iloc[0]["last_position"] == 1
+
+
+def test_latest_data_run(db_path):
+    built = scenario_mixed(db_path)
+    assert data.load_latest_data_run_raw(str(db_path), built.query_ids[Q1]) == built.run_ids[-1]
+
+
+def test_latest_data_run_is_none_when_everything_was_blocked(db_path):
+    built = scenario_all_blocked(db_path)
+    assert data.load_latest_data_run_raw(str(db_path), built.query_ids[Q1]) is None
+
+
+def test_latest_data_run_counts_a_partial_attempt(db_path):
+    built = scenario_latest(db_path, "partial")
+    q = built.query_ids
+    assert data.load_latest_data_run_raw(str(db_path), q[Q2]) == built.run_ids[-1]
+    # Q1 failed in r7, so its newest run with data stays r6.
+    assert data.load_latest_data_run_raw(str(db_path), q[Q1]) == built.run_ids[5]
+
+
+def test_latest_data_run_with_only_a_partial_attempt(db_path):
+    started = iso_z(utc_now() - timedelta(minutes=20))
+    partial = ok_result(
+        started, (A,), complete=False, status="partial", http_status=503, error_class="http_5xx"
+    )
+    built = build_db(db_path, [RunSpec(started, {Q1: partial}, n_queries=3)])
+    assert data.load_latest_data_run_raw(str(db_path), built.query_ids[Q1]) == built.run_ids[0]
+
+
+def test_top_ids_follow_position_order(db_path):
+    built = scenario_mixed(db_path)
+    q1, r6 = built.query_ids[Q1], built.run_ids[-1]
+    assert data.load_top_ids_raw(str(db_path), r6, q1, 5) == (A, B, D, C, E)
+    assert data.load_top_ids_raw(str(db_path), r6, q1, 2) == (A, B)
+
+
+def test_observations_of_selected_products_only(db_path):
+    built = scenario_mixed(db_path)
+    obs = data.load_observations_raw(str(db_path), built.query_ids[Q1], (B, A), "")
+    assert list(obs.columns) == OBS_COLUMNS
+    assert set(obs["nm_id"]) == {A, B}
+    keys = list(zip(obs["collected_at"], obs["nm_id"], strict=True))
+    assert keys == sorted(keys)
+    assert len(obs) == 5 + 3  # A in r1, r3, r4, r5, r6; B in r1, r5, r6 (absent r3, r4)
+
+
+def test_observations_of_nobody_is_an_empty_frame_with_the_columns(db_path):
+    built = scenario_mixed(db_path)
+    obs = data.load_observations_raw(str(db_path), built.query_ids[Q1], (), "")
+    assert obs.empty
+    assert list(obs.columns) == OBS_COLUMNS
+
+
+def test_observations_refuse_too_many_ids(db_path):
+    built = scenario_mixed(db_path)
+    with pytest.raises(ValueError):
+        data.load_observations_raw(
+            str(db_path), built.query_ids[Q1], tuple(range(MAX_IN_IDS + 1)), ""
+        )
+
+
+def test_observations_bind_ids_as_parameters():
+    sql = data.OBSERVATIONS_SQL_TEMPLATE.format(placeholders="?, ?")
+    assert sql.count("?") == 4  # query, two ids, since
+    assert "{" not in sql
+    hostile = "1); DROP TABLE runs; --"
+    assert hostile not in sql
+
+
+def test_observations_since_cuts_the_history(db_path):
+    built = scenario_mixed(db_path)
+    since = scalar(db_path, "SELECT started_at FROM runs WHERE id = ?", (built.run_ids[4],))
+    obs = data.load_observations_raw(str(db_path), built.query_ids[Q1], (A,), since)
+    assert set(obs["run_id"]) == {built.run_ids[4], built.run_ids[5]}
+
+
+def test_cached_chart_twins_recompute_when_the_data_version_changes(db_path, monkeypatch):
+    built = scenario_mixed(db_path)
+    q1 = built.query_ids[Q1]
+    path = str(db_path)
+    calls: list[str] = []
+    for name in ("queries", "run_grid", "product_options", "latest_data_run", "top_ids"):
+        raw = getattr(data, f"load_{name}_raw")
+
+        def counting(*args, _raw=raw, _name=name):
+            calls.append(_name)
+            return _raw(*args)
+
+        monkeypatch.setattr(data, f"load_{name}_raw", counting)
+    obs_raw = data.load_observations_raw
+
+    def counting_obs(*args):
+        calls.append("observations")
+        return obs_raw(*args)
+
+    monkeypatch.setattr(data, "load_observations_raw", counting_obs)
+
+    def run_all(ver):
+        data.load_queries(path, ver)
+        data.load_run_grid(path, ver, q1, 1, "")
+        data.load_product_options(path, ver, q1)
+        data.load_latest_data_run(path, ver, q1)
+        data.load_top_ids(path, ver, built.run_ids[-1], q1, 3)
+        data.load_observations(path, ver, q1, (A,), "")
+
+    run_all(data.DataVersion(1, 1, "ok"))
+    run_all(data.DataVersion(1, 1, "ok"))
+    assert len(calls) == 6
+    run_all(data.DataVersion(2, 9, "ok"))
+    assert len(calls) == 12

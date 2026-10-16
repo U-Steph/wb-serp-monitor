@@ -1,4 +1,4 @@
-"""Pure header logic and run-log shaping: freshness, collector line, banner, run table, totals.
+"""Pure UI logic: header, run log, picker helpers and the honest-gap series of the position chart.
 
 No Streamlit, no database, no clock: every function takes ``now`` explicitly so it is testable
 with fixed values. Stored times are UTC ``YYYY-MM-DDTHH:MM:SSZ``; the screen shows Moscow time.
@@ -6,13 +6,13 @@ with fixed values. Stored times are UTC ``YYYY-MM-DDTHH:MM:SSZ``; the screen sho
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from wbmon.clock import floor_hour, parse_iso_z
+from wbmon.clock import floor_hour, iso_z, parse_iso_z
 from wbmon.ui import texts
 
 MSK = "Europe/Moscow"
@@ -21,6 +21,15 @@ _TS_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 GREEN_MAX_S = 90 * 60
 YELLOW_MAX_S = 3 * 3600
 RUNNING_ALIVE_S = 60 * 60
+
+# Point states of the position chart (CTX-2.3, D3-A5).
+FOUND = "found"
+ABSENT = "absent"
+UNKNOWN = "unknown"
+MAX_SELECTED = 15
+PERIOD_DELTAS: dict[str, timedelta] = {"24 ч": timedelta(hours=24), "7 дней": timedelta(days=7)}
+HALF_RUN = pd.Timedelta(minutes=30)
+NAME_LIMIT = 40
 
 RUNLOG_COLUMNS = (
     "Начало (МСК)",
@@ -192,3 +201,118 @@ def totals_lines(overview: Mapping) -> list[str]:
         texts.TOTALS_OBS.format(n=texts.fmt_int(overview.get("n_obs") or 0)),
         texts.TOTALS_PRODUCTS.format(n=texts.fmt_int(overview.get("n_products") or 0)),
     ]
+
+
+# ----------------------------------------------------------------------- honest-gap series
+
+
+def period_since(last_started: str | None, period: str | None) -> str:
+    """Lower bound (UTC ``Z``) of a period, anchored on the latest run start; empty = all time."""
+    delta = PERIOD_DELTAS.get(period or "")
+    if delta is None or last_started is None:
+        return ""
+    return iso_z(parse_iso_z(last_started) - delta)
+
+
+def prepare_grid(grid: pd.DataFrame) -> pd.DataFrame:
+    """Add Moscow time, a filled ``q_status`` and the ``complete`` flag to the run grid.
+
+    ``complete`` is the only proof that a product was really not in the results: the attempt is
+    ``ok`` AND not cut short. A missing attempt row (abandoned run) reads as ``missing``.
+    """
+    g = grid.copy()
+    g["t_msk"] = to_msk(g["started_at"])
+    status = g["q_status"].astype("object")
+    g["q_status"] = status.where(status.notna(), "missing")
+    flag = g["is_complete"].fillna(0).astype("int64") == 1
+    g["complete"] = ((g["q_status"] == "ok") & flag).fillna(False).astype(bool)
+    return g
+
+
+def _prepared(grid: pd.DataFrame) -> pd.DataFrame:
+    return grid if "complete" in grid.columns and "t_msk" in grid.columns else prepare_grid(grid)
+
+
+def build_points(grid: pd.DataFrame, obs: pd.DataFrame, nm_ids: Sequence[int]) -> pd.DataFrame:
+    """One row per run of the grid and requested product, each with an explicit state.
+
+    FOUND: an observation exists. ABSENT: no observation and the attempt is complete.
+    UNKNOWN: no observation and the attempt is not complete (blocked, error, partial, cut short,
+    never recorded). Nothing is interpolated: only FOUND rows carry a position.
+    """
+    g = _prepared(grid)
+    ids = pd.Index([int(i) for i in nm_ids], dtype="int64")
+    index = pd.MultiIndex.from_product(
+        [g["run_id"].astype("int64"), ids], names=["run_id", "nm_id"]
+    )
+    columns = ["run_id", "t_msk", "q_status", "complete", "items_collected"]
+    cross = index.to_frame(index=False).merge(g[columns], on="run_id", how="left")
+    seen = obs.drop(columns=["collected_at"], errors="ignore").copy()
+    seen["run_id"] = seen["run_id"].astype("int64")
+    seen["nm_id"] = seen["nm_id"].astype("int64")
+    # A (run, product) pair may repeat in the data: keep the best (smallest) position.
+    seen = seen.sort_values("position").drop_duplicates(["run_id", "nm_id"])
+    out = cross.merge(seen, on=["run_id", "nm_id"], how="left")
+    out["complete"] = out["complete"].fillna(False).astype(bool)
+    found = out["position"].notna()
+    out["state"] = (
+        pd.Series(UNKNOWN, index=out.index).mask(out["complete"], ABSENT).mask(found, FOUND)
+    )
+    return out.sort_values(["nm_id", "t_msk", "run_id"], ignore_index=True)
+
+
+def band_times(grid: pd.DataFrame) -> pd.Series:
+    """Moscow start times of the runs whose attempt for the query was not complete."""
+    g = _prepared(grid)
+    return g.loc[~g["complete"], "t_msk"].reset_index(drop=True)
+
+
+def x_range(grid: pd.DataFrame) -> tuple[pd.Timestamp, pd.Timestamp]:
+    """The visible time span: first and last run, padded by half a run on each side."""
+    times = _prepared(grid)["t_msk"]
+    if times.empty:
+        raise ValueError("an empty run grid has no time range")
+    return times.min() - HALF_RUN, times.max() + HALF_RUN
+
+
+def _text_or_dash(value: object) -> str:
+    if value is None or pd.isna(value):  # type: ignore[arg-type]
+        return texts.MISSING
+    return str(value) or texts.MISSING
+
+
+def product_options_frame(options: pd.DataFrame, latest_data_run_id: int | None) -> pd.DataFrame:
+    """Picker rows ``nm_id, label, in_latest`` ordered by current position, then best position."""
+    columns = ["nm_id", "label", "in_latest"]
+    if options.empty:
+        return pd.DataFrame({"nm_id": pd.Series(dtype="int64"), "label": [], "in_latest": []})[
+            columns
+        ]
+    frame = options.copy()
+    frame["nm_id"] = frame["nm_id"].astype("int64")
+    if latest_data_run_id is None:
+        frame["in_latest"] = False
+    else:
+        frame["in_latest"] = (frame["last_run_id"] == latest_data_run_id).fillna(False).astype(bool)
+    frame["_last"] = frame["last_position"].where(frame["in_latest"]).astype("float64")
+    frame = frame.sort_values(
+        ["in_latest", "_last", "best_position", "nm_id"],
+        ascending=[False, True, True, True],
+        na_position="last",
+        ignore_index=True,
+    )
+    labels = []
+    for nm_id, brand, name, in_latest in zip(
+        frame["nm_id"], frame["brand"], frame["name"], frame["in_latest"], strict=True
+    ):
+        text = f"{nm_id} · {_text_or_dash(brand)} · {_text_or_dash(name)[:NAME_LIMIT]}"
+        labels.append(text if in_latest else text + texts.NOT_IN_LATEST_SUFFIX)
+    frame["label"] = labels
+    return frame[columns]
+
+
+def default_selection(top_ids: Sequence[int], option_ids: Sequence[int], n: int) -> list[int]:
+    """The first ``min(n, 15)`` products of the latest run that the picker really offers."""
+    offered = {int(i) for i in option_ids}
+    kept = [int(i) for i in top_ids if int(i) in offered]
+    return kept[: max(0, min(int(n), MAX_SELECTED))]
