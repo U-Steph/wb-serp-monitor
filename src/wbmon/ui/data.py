@@ -27,6 +27,7 @@ CACHE_MAX_ENTRIES = 256
 RUN_LOG_LIMIT = 200
 ATTEMPTS_LIMIT = 10
 SNAPSHOT_RUNS_LIMIT = 500
+HEATMAP_RUNS = 48
 HEARTBEAT_FILE = "scheduler_heartbeat.json"
 HEARTBEAT_STALE_S = 600  # at least twice the scheduler's write interval (it ticks every 30 s)
 READ_ERRORS = (sqlite3.Error, pd.errors.DatabaseError)
@@ -153,6 +154,25 @@ SELECT position, is_promoted, nm_id, name, brand, price_rub, rating, feedbacks, 
 FROM observations
 WHERE run_id = ? AND query_id = ?
 ORDER BY position
+"""
+# Running and abandoned runs have no complete per-query rows, so they never become heatmap columns.
+# Both statements pick the same runs, newest first; the figure builder flips them to oldest first.
+HEATMAP_RUNS_SQL = """
+SELECT id AS run_id, started_at, status
+FROM runs
+WHERE status NOT IN ('running', 'abandoned')
+ORDER BY started_at DESC, id DESC
+LIMIT :n
+"""
+STATUS_MATRIX_SQL = """
+SELECT rq.run_id, rq.query_id, rq.status, rq.items_collected, rq.is_complete, rq.http_status,
+       rq.error_class
+FROM run_queries rq
+WHERE rq.run_id IN (
+  SELECT id FROM runs
+  WHERE status NOT IN ('running', 'abandoned')
+  ORDER BY started_at DESC, id DESC
+  LIMIT :n)
 """
 
 
@@ -300,6 +320,15 @@ def load_snapshot_raw(path: str, run_id: int, query_id: int) -> pd.DataFrame:
         return _df(con, SNAPSHOT_SQL, (int(run_id), int(query_id)))
 
 
+def load_status_matrix_raw(
+    path: str, n_runs: int = HEATMAP_RUNS
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """The newest ``n_runs`` finished runs (newest first) and every query attempt inside them."""
+    params = {"n": int(n_runs)}
+    with contextlib.closing(connect_ro(path)) as con:
+        return _df(con, HEATMAP_RUNS_SQL, params), _df(con, STATUS_MATRIX_SQL, params)
+
+
 @st.cache_data(ttl=CACHE_TTL_S, max_entries=CACHE_MAX_ENTRIES, show_spinner=False)
 def load_overview(path: str, ver: DataVersion) -> dict:
     """Cached ``load_overview_raw``; ``ver`` is only part of the cache key."""
@@ -390,3 +419,12 @@ def load_snapshot(path: str, ver: DataVersion, run_id: int, query_id: int) -> pd
     """Cached ``load_snapshot_raw``."""
     del ver
     return load_snapshot_raw(path, run_id, query_id)
+
+
+@st.cache_data(ttl=CACHE_TTL_S, max_entries=CACHE_MAX_ENTRIES, show_spinner=False)
+def load_status_matrix(
+    path: str, ver: DataVersion, n_runs: int = HEATMAP_RUNS
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Cached ``load_status_matrix_raw``."""
+    del ver
+    return load_status_matrix_raw(path, n_runs)

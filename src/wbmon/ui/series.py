@@ -187,6 +187,19 @@ def run_log_frame(run_log: pd.DataFrame) -> pd.DataFrame:
     return out.reset_index(drop=True)
 
 
+STATUS_ORDER = ("ok", "partial", "blocked", "rate_limited", "error", "abandoned", "running")
+
+
+def status_counts(run_log: pd.DataFrame, last: int = 24) -> dict[str, int]:
+    """Runs per status among the newest ``last`` rows of the run log (newest first); no zeros."""
+    if run_log.empty:
+        return {}
+    seen = run_log["status"].head(int(last)).astype(str).value_counts()
+    known = {status: int(seen[status]) for status in STATUS_ORDER if status in seen.index}
+    other = {str(s): int(n) for s, n in seen.items() if s not in STATUS_ORDER}
+    return {**known, **other}
+
+
 def totals_lines(overview: Mapping) -> list[str]:
     """The five sidebar lines; numbers are ours, so the ``**`` emphasis is safe markdown."""
     first = to_msk_one(overview.get("first_started"))

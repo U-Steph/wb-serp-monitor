@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import html
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from datetime import datetime
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -57,6 +58,21 @@ TEXT_COLOR = "#1A1D21"
 GREY = "#868E96"
 Y_TITLE = "Позиция в выдаче"
 X_TITLE = "Время сбора, МСК"
+
+# Heatmap: code -> (integer code, fill, glyph). The glyph is the non-colour channel of the status.
+STATUS_STYLE: dict[str, tuple[int, str, str]] = {
+    "ok": (1, "#2B8A3E", "✓"),
+    "partial": (2, "#F2C037", "~"),
+    "blocked": (3, "#C92A2A", "✕"),
+    "rate_limited": (4, "#D9480F", "!"),
+    "error": (5, "#6C757D", "E"),
+}
+MISSING_STYLE: tuple[int, str, str] = (0, "#FFFFFF", "")
+MISSING_LABEL = "пусто — запрос не выполнялся"
+HEATMAP_CELL_PX = 20
+HEATMAP_FRAME_PX = 96  # top + bottom margin
+HEATMAP_LABEL_CHARS = 24
+HEATMAP_BACKGROUND = "#E9ECEF"
 
 
 def esc(text: object) -> str:
@@ -216,5 +232,124 @@ def position_figure(
         },
         paper_bgcolor="#FFFFFF",
         plot_bgcolor="#FFFFFF",
+    )
+    return fig
+
+
+def heatmap_colorscale() -> list[list]:
+    """A stepped scale: code ``i`` of 6 owns the band ``[i/6, (i+1)/6]`` and one flat colour."""
+    styles = [MISSING_STYLE, *sorted(STATUS_STYLE.values())]
+    scale: list[list] = []
+    for i, (_code, colour, _glyph) in enumerate(styles):
+        scale.append([i / 6, colour])
+        scale.append([(i + 1) / 6, colour])
+    return scale
+
+
+def _msk_text(started_at: object, fmt: Callable[[datetime], str]) -> str:
+    stamp = series.to_msk_one(str(started_at))
+    return texts.MISSING if stamp is None else fmt(stamp)
+
+
+def _tick_label(sheet_order: int, text: str) -> str:
+    cut = len(text) > HEATMAP_LABEL_CHARS
+    return esc(f"{int(sheet_order):02d}. {text[:HEATMAP_LABEL_CHARS]}" + ("…" if cut else ""))
+
+
+def _hover(query_text: str, started: str, status: object, items: object, http: object) -> str:
+    """Hover text of one cell; ``status`` None means no attempt row (never fabricated numbers)."""
+    label = MISSING_LABEL if status is None else texts.STATUS_LABELS.get(str(status), esc(status))
+    items_text = texts.MISSING if pd.isna(items) else str(int(items))  # type: ignore[arg-type]
+    http_text = texts.MISSING if pd.isna(http) else str(int(http))  # type: ignore[arg-type]
+    return (
+        f"{esc(query_text)}<br>Сбор {started} МСК<br>Статус: {label}"
+        f"<br>Товаров: {items_text}<br>HTTP: {http_text}"
+    )
+
+
+def status_heatmap(runs: pd.DataFrame, matrix: pd.DataFrame, queries: pd.DataFrame) -> go.Figure:
+    """Query x run health grid: colour AND glyph per attempt, white and empty where none was made.
+
+    ``runs`` arrives newest first and is drawn oldest to newest; ``queries`` is in sheet order.
+    Axes are integer positions with custom tick text, so two queries or two runs that share a label
+    can never be merged into one row or column.
+    """
+    run_rows = list(runs.iloc[::-1].itertuples(index=False))
+    query_rows = list(queries.itertuples(index=False))
+    # one attempt per (run, query): the schema makes the pair UNIQUE
+    cells = {(int(r.query_id), int(r.run_id)): r for r in matrix.itertuples(index=False)}
+    started = {int(r.run_id): _msk_text(r.started_at, texts.fmt_dt) for r in run_rows}
+    z: list[list[int]] = []
+    glyphs: list[list[str]] = []
+    hover: list[list[str]] = []
+    for q in query_rows:
+        z_row: list[int] = []
+        glyph_row: list[str] = []
+        hover_row: list[str] = []
+        for r in run_rows:
+            cell = cells.get((int(q.query_id), int(r.run_id)))
+            if cell is None:
+                code, _colour, glyph = MISSING_STYLE
+                hover_row.append(_hover(str(q.text), started[int(r.run_id)], None, None, None))
+            else:
+                code, _colour, glyph = STATUS_STYLE.get(str(cell.status), STATUS_STYLE["error"])
+                hover_row.append(
+                    _hover(
+                        str(q.text),
+                        started[int(r.run_id)],
+                        cell.status,
+                        cell.items_collected,
+                        cell.http_status,
+                    )
+                )
+            z_row.append(code)
+            glyph_row.append(glyph)
+        z.append(z_row)
+        glyphs.append(glyph_row)
+        hover.append(hover_row)
+
+    fig = go.Figure(
+        go.Heatmap(
+            z=z,
+            x=list(range(len(run_rows))),
+            y=list(range(len(query_rows))),
+            text=glyphs,
+            texttemplate="%{text}",
+            textfont={"size": 14},
+            customdata=hover,
+            hovertemplate="%{customdata}<extra></extra>",
+            colorscale=heatmap_colorscale(),
+            zmin=-0.5,
+            zmax=5.5,
+            showscale=False,
+            xgap=1,
+            ygap=1,
+        )
+    )
+    fig.update_layout(
+        height=HEATMAP_CELL_PX * len(query_rows) + HEATMAP_FRAME_PX,
+        margin={"l": 248, "r": 16, "t": 92, "b": 4},
+        plot_bgcolor=HEATMAP_BACKGROUND,
+        paper_bgcolor="#FFFFFF",
+        font={
+            "size": 14,
+            "color": TEXT_COLOR,
+            "family": "Source Sans Pro, Source Sans 3, sans-serif",
+        },
+        xaxis={
+            "side": "top",
+            "tickangle": -90,
+            "tickmode": "array",
+            "tickvals": list(range(len(run_rows))),
+            "ticktext": [_msk_text(r.started_at, texts.fmt_dt_short) for r in run_rows],
+            "showgrid": False,
+        },
+        yaxis={
+            "autorange": "reversed",
+            "tickmode": "array",
+            "tickvals": list(range(len(query_rows))),
+            "ticktext": [_tick_label(int(q.sheet_order), str(q.text)) for q in query_rows],
+            "showgrid": False,
+        },
     )
     return fig

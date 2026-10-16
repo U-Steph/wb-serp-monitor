@@ -10,7 +10,17 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from ui.dbbuilder import NM, Q1, scenario_mixed
+from ui.dbbuilder import (
+    NM,
+    Q1,
+    Q2,
+    RunSpec,
+    build_db,
+    ok_result,
+    scenario_all_blocked,
+    scenario_mixed,
+)
+from wbmon.clock import iso_z, utc_now
 from wbmon.ui import charts, data, series, texts
 
 A, B, C, D, E, F = (NM[k] for k in "ABCDEF")
@@ -342,6 +352,227 @@ def test_a_month_of_failed_runs_builds_fast():
     assert time.perf_counter() - started < 1.0
     assert len(fig.data) == 17
     assert len(fig.layout.shapes) == n // 2
+
+
+# ---------------------------------------------------------------------- status heatmap
+
+
+def heatmap_of(builder, *args, **kwargs):
+    built = builder(*args, **kwargs)
+    path = str(args[0])
+    runs, matrix = data.load_status_matrix_raw(path)
+    queries = data.load_queries_raw(path)
+    return built, charts.status_heatmap(runs, matrix, queries), runs, matrix, queries
+
+
+@pytest.fixture
+def mixed_heatmap(db_path):
+    return heatmap_of(scenario_mixed, db_path)
+
+
+def test_heatmap_cells_are_codes_and_glyphs_oldest_to_newest(mixed_heatmap):
+    _built, fig, *_ = mixed_heatmap
+    assert len(fig.data) == 1
+    trace = fig.data[0]
+    assert trace.type == "heatmap"
+    assert [list(row) for row in trace.z] == [
+        [1, 3, 1, 2, 1, 1],
+        [1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1],
+    ]
+    assert list(trace.text[0]) == ["✓", "✕", "✓", "~", "✓", "✓"]
+    assert trace.texttemplate == "%{text}"
+    assert trace.textfont.size == 14
+    assert trace.textfont.color is None
+    assert trace.showscale is False
+    assert (trace.zmin, trace.zmax) == (-0.5, 5.5)
+    assert (trace.xgap, trace.ygap) == (1, 1)
+
+
+def test_heatmap_colorscale_is_stepped_and_matches_the_status_table():
+    scale = charts.heatmap_colorscale()
+    assert len(scale) == 12
+    assert [c for _, c in scale[::2]] == [
+        "#FFFFFF",
+        "#2B8A3E",
+        "#F2C037",
+        "#C92A2A",
+        "#D9480F",
+        "#6C757D",
+    ]
+    for i in range(6):
+        assert scale[2 * i][0] == pytest.approx(i / 6)
+        assert scale[2 * i + 1][0] == pytest.approx((i + 1) / 6)
+        assert scale[2 * i][1] == scale[2 * i + 1][1]
+    assert charts.MISSING_STYLE == (0, "#FFFFFF", "")
+    assert {k: v[2] for k, v in charts.STATUS_STYLE.items()} == {
+        "ok": "✓",
+        "partial": "~",
+        "blocked": "✕",
+        "rate_limited": "!",
+        "error": "E",
+    }
+
+
+def test_heatmap_figure_colorscale_is_the_helper(mixed_heatmap):
+    _built, fig, *_ = mixed_heatmap
+    assert [list(stop) for stop in fig.data[0].colorscale] == charts.heatmap_colorscale()
+
+
+def test_heatmap_layout_follows_the_contract(mixed_heatmap):
+    _built, fig, *_ = mixed_heatmap
+    layout = fig.layout
+    assert layout.height == 20 * 3 + 96 == 156
+    assert (layout.margin.l, layout.margin.r, layout.margin.t, layout.margin.b) == (248, 16, 92, 4)
+    assert layout.plot_bgcolor == "#E9ECEF"
+    assert layout.xaxis.side == "top"
+    assert layout.xaxis.tickangle == -90
+    assert layout.xaxis.tickmode == "array"
+    assert layout.yaxis.autorange == "reversed"
+    assert layout.yaxis.tickmode == "array"
+    assert layout.title.text is None
+
+
+def test_heatmap_ticks_are_msk_run_labels_and_truncated_queries(mixed_heatmap):
+    _built, fig, runs, *_ = mixed_heatmap
+    expected = [
+        texts.fmt_dt_short(series.to_msk_one(str(t))) for t in list(runs["started_at"])[::-1]
+    ]
+    assert list(fig.layout.xaxis.ticktext) == expected
+    ticks = list(fig.layout.yaxis.ticktext)
+    assert ticks[0] == "01. постельное бельё 2-спаль…"
+    assert ticks[2] == "03. подушка 50x70"
+
+
+def test_heatmap_hover_names_the_attempt(mixed_heatmap):
+    _built, fig, runs, *_ = mixed_heatmap
+    trace = fig.data[0]
+    assert trace.hovertemplate == "%{customdata}<extra></extra>"
+    blocked = trace.customdata[0][1]
+    assert Q1 in blocked
+    assert "Сбор " in blocked and " МСК" in blocked
+    assert "Статус: ⛔ Заблокировано" in blocked
+    assert "Товаров: 0" in blocked
+    assert "HTTP: 403" in blocked
+    ok = trace.customdata[0][0]
+    assert "Статус: ✅ Успешно" in ok
+    assert "HTTP: —" in ok
+    stamp = texts.fmt_dt(series.to_msk_one(str(list(runs["started_at"])[-1])))
+    assert f"Сбор {stamp} МСК" in ok
+
+
+def test_heatmap_cell_without_an_attempt_is_empty(db_path):
+    started = iso_z(utc_now() - timedelta(minutes=20))
+    limited = RunSpec(started, {Q1: ok_result(started, (A,))}, trigger="manual", n_queries=1)
+    build_db(db_path, [limited])
+    path = str(db_path)
+    queries = data.load_queries_raw(path)
+    runs, matrix = data.load_status_matrix_raw(path)
+    assert len(matrix) == 1  # only Q1 was attempted
+    trace = charts.status_heatmap(runs, matrix, queries).data[0]
+    assert [list(row) for row in trace.z] == [[1], [0], [0]]
+    assert list(trace.text[1]) == [""]
+    assert f"{Q2}<br>" in trace.customdata[1][0]
+    assert "Статус: пусто — запрос не выполнялся" in trace.customdata[1][0]
+
+
+def test_heatmap_escapes_a_hostile_query_text(db_path):
+    hostile = '<a href="https://evil.example">x</a>'
+    started = "2026-10-16T09:00:00Z"
+    build_db(
+        db_path,
+        [RunSpec(started, {hostile: ok_result(started, (A,))})],
+        queries=(hostile,),
+    )
+    path = str(db_path)
+    runs, matrix = data.load_status_matrix_raw(path)
+    fig = charts.status_heatmap(runs, matrix, data.load_queries_raw(path))
+    raw = fig.to_json()
+    assert "<a " not in raw
+    assert "&lt;a href" in raw
+
+
+def test_heatmap_of_an_all_blocked_history_is_a_full_red_field(db_path):
+    _built, fig, *_ = heatmap_of(scenario_all_blocked, db_path)
+    trace = fig.data[0]
+    assert all(code == 3 for row in trace.z for code in row)
+    assert all(glyph == "✕" for row in trace.text for glyph in row)
+    assert len(trace.z) == 3 and len(trace.z[0]) == 3
+
+
+def test_heatmap_with_fewer_runs_is_not_padded(db_path):
+    started = "2026-10-16T09:00:00Z"
+    build_db(db_path, [RunSpec(started, {Q1: ok_result(started, (A,))}, n_queries=3)])
+    path = str(db_path)
+    runs, matrix = data.load_status_matrix_raw(path)
+    fig = charts.status_heatmap(runs, matrix, data.load_queries_raw(path))
+    assert len(fig.data[0].x) == 1
+
+
+def test_heatmap_axes_keep_duplicate_labels_apart():
+    runs = pd.DataFrame(
+        {
+            "run_id": [2, 1],
+            "started_at": ["2026-10-16T09:00:20Z", "2026-10-16T09:00:05Z"],
+            "status": ["ok", "ok"],
+        }
+    )
+    queries = pd.DataFrame({"query_id": [1, 2], "text": ["один", "один"], "sheet_order": [1, 1]})
+    matrix = pd.DataFrame(
+        {
+            "run_id": [1, 1, 2, 2],
+            "query_id": [1, 2, 1, 2],
+            "status": ["ok", "blocked", "partial", "error"],
+            "items_collected": [200, 0, 15, 0],
+            "is_complete": [1, 0, 0, 0],
+            "http_status": [None, 403, 503, None],
+            "error_class": [None, "http_403", "http_5xx", "timeout"],
+        }
+    )
+    fig = charts.status_heatmap(runs, matrix, queries)
+    assert [list(row) for row in fig.data[0].z] == [[1, 2], [3, 5]]
+    assert list(fig.data[0].x) == [0, 1]
+    assert list(fig.data[0].y) == [0, 1]
+
+
+def test_heatmap_of_48_runs_by_70_queries_builds_under_a_second():
+    n_runs, n_queries = 48, 70
+    runs = pd.DataFrame(
+        {
+            "run_id": range(n_runs, 0, -1),
+            "started_at": [
+                f"2026-10-{14 + i // 24:02d}T{i % 24:02d}:00:00Z" for i in range(n_runs)
+            ],
+            "status": "ok",
+        }
+    )
+    queries = pd.DataFrame(
+        {
+            "query_id": range(1, n_queries + 1),
+            "text": [f"запрос {i}" for i in range(1, n_queries + 1)],
+            "sheet_order": range(1, n_queries + 1),
+        }
+    )
+    matrix = pd.DataFrame(
+        [
+            {
+                "run_id": r,
+                "query_id": q,
+                "status": "blocked" if (r + q) % 7 == 0 else "ok",
+                "items_collected": 200,
+                "is_complete": 1,
+                "http_status": None,
+                "error_class": None,
+            }
+            for r in range(1, n_runs + 1)
+            for q in range(1, n_queries + 1)
+        ]
+    )
+    started = time.perf_counter()
+    fig = charts.status_heatmap(runs, matrix, queries)
+    assert time.perf_counter() - started < 1.0
+    assert fig.layout.height == 20 * 70 + 96
+    assert len(fig.data[0].z) == 70 and len(fig.data[0].z[0]) == 48
 
 
 # ------------------------------------------------------------------------------ purity

@@ -649,3 +649,99 @@ def test_snapshot_never_mixes_other_queries(db_path):
     built = scenario_mixed(db_path)
     frame = data.load_snapshot_raw(str(db_path), built.run_ids[-1], built.query_ids[Q2])
     assert set(frame["nm_id"]) == set(Q2_IDS)
+
+
+# ------------------------------------------------------------------------ status matrix
+
+
+def test_status_matrix_of_the_mixed_history(db_path):
+    built = scenario_mixed(db_path)
+    runs, matrix = data.load_status_matrix_raw(str(db_path))
+    assert list(runs.columns) == ["run_id", "started_at", "status"]
+    assert list(runs["run_id"]) == built.run_ids[::-1]
+    assert list(matrix.columns) == [
+        "run_id",
+        "query_id",
+        "status",
+        "items_collected",
+        "is_complete",
+        "http_status",
+        "error_class",
+    ]
+    assert len(matrix) == 18
+    assert data.HEATMAP_RUNS == 48
+
+
+@pytest.mark.parametrize("final", ["running", "abandoned"])
+def test_status_matrix_leaves_out_unfinished_runs(db_path, final):
+    built = scenario_latest(db_path, final)
+    runs, matrix = data.load_status_matrix_raw(str(db_path))
+    r7 = built.run_ids[-1]
+    assert len(runs) == 6
+    assert r7 not in set(runs["run_id"])
+    assert r7 not in set(matrix["run_id"])
+
+
+def test_status_matrix_keeps_a_limited_manual_run_with_its_one_row(db_path):
+    started = iso_z(utc_now() - timedelta(minutes=20))
+    limited = RunSpec(started, {Q1: ok_result(started, (NM["A"],))}, trigger="manual", n_queries=1)
+    built = build_db(db_path, [limited])
+    runs, matrix = data.load_status_matrix_raw(str(db_path))
+    assert list(runs["run_id"]) == built.run_ids
+    assert len(matrix) == 1
+
+
+def test_status_matrix_n_runs_caps_the_newest_runs(db_path):
+    built = scenario_mixed(db_path)
+    runs, matrix = data.load_status_matrix_raw(str(db_path), n_runs=2)
+    assert list(runs["run_id"]) == built.run_ids[:-3:-1]
+    assert len(matrix) == 6
+    assert set(matrix["run_id"]) == set(built.run_ids[-2:])
+
+
+def test_status_matrix_sql_excludes_unfinished_runs_in_both_statements():
+    for sql in (data.HEATMAP_RUNS_SQL, data.STATUS_MATRIX_SQL):
+        assert "NOT IN ('running', 'abandoned')" in sql
+
+
+def test_status_matrix_of_an_empty_database_has_the_columns(db_path):
+    init_db(db_path)
+    runs, matrix = data.load_status_matrix_raw(str(db_path))
+    assert runs.empty and matrix.empty
+    assert list(runs.columns) == ["run_id", "started_at", "status"]
+    assert "query_id" in matrix.columns
+
+
+def test_status_matrix_opens_one_connection_and_closes_it(db_path, monkeypatch):
+    scenario_mixed(db_path)
+    opened: list[sqlite3.Connection] = []
+    real = data.connect_ro
+
+    def spy(path):
+        con = real(path)
+        opened.append(con)
+        return con
+
+    monkeypatch.setattr(data, "connect_ro", spy)
+    data.load_status_matrix_raw(str(db_path))
+    assert len(opened) == 1
+    with pytest.raises(sqlite3.ProgrammingError):
+        opened[0].execute("SELECT 1")
+
+
+def test_status_matrix_twin_is_keyed_on_the_data_version(db_path, monkeypatch):
+    scenario_mixed(db_path)
+    calls: list[int] = []
+    raw = data.load_status_matrix_raw
+
+    def counting(path, n_runs=data.HEATMAP_RUNS):
+        calls.append(n_runs)
+        return raw(path, n_runs)
+
+    monkeypatch.setattr(data, "load_status_matrix_raw", counting)
+    path = str(db_path)
+    data.load_status_matrix(path, data.DataVersion(1, 1, "ok"))
+    data.load_status_matrix(path, data.DataVersion(1, 1, "ok"))
+    assert len(calls) == 1
+    data.load_status_matrix(path, data.DataVersion(2, 9, "ok"))
+    assert len(calls) == 2

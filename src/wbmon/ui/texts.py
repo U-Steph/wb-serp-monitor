@@ -6,6 +6,7 @@ font renders it as a missing glyph, change ``_THOUSANDS`` here and nothing else.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 
 # ------------------------------------------------------------------------------------- page
@@ -176,6 +177,21 @@ RUNLOG_FOOTER = "Журнал показывает последние 200 сбо
 NO_RUNS_RUNLOG = "Данных о сборах пока нет — тепловая карта появится после первого сбора."
 RUNLOG_RUNNING = "идёт"
 MISSING = "—"
+HEATMAP_TITLE = "**Состояние запросов по сборам**"
+HEATMAP_LEGEND = (
+    ":green-badge[✓ Успешно] :yellow-badge[~ Частично] :red-badge[✕ Заблокировано] "
+    ":orange-badge[! Лимит запросов] :gray-badge[E Ошибка] пусто — запрос не выполнялся"
+)
+_BADGE_COLOURS: dict[str, str] = {
+    "ok": "green",
+    "partial": "yellow",
+    "blocked": "red",
+    "rate_limited": "orange",
+    "error": "gray",
+    "abandoned": "gray",
+    "running": "blue",
+}
+_RUN_FORMS = ("сбор", "сбора", "сборов")
 
 _THOUSANDS = " "
 _QUERY_FORMS = ("запрос", "запроса", "запросов")
@@ -271,3 +287,17 @@ def subtitle(n_queries: int, top_n: int) -> str:
     """The one-line caption under the title."""
     noun = plural_ru(n_queries, _QUERY_FORMS)
     return f"{n_queries} {noun} · топ-{top_n} · Москва · сбор каждый час"
+
+
+def summary_badges(counts: Mapping[str, int], n: int) -> str:
+    """Markdown badge line for the newest ``n`` runs, built only from our labels and integers.
+
+    Zero counts are omitted; when there is nothing to count the line shows a single green zero.
+    """
+    head = "Последний сбор:" if int(n) == 1 else f"Последние {int(n)} {plural_ru(n, _RUN_FORMS)}:"
+    badges = [
+        f":{_BADGE_COLOURS.get(status, 'gray')}-badge[{STATUS_LABELS.get(status, status)}: {count}]"
+        for status, count in counts.items()
+        if int(count) > 0
+    ]
+    return " ".join([head, *(badges or [f":green-badge[{STATUS_LABELS['ok']}: 0]"])])

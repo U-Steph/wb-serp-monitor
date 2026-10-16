@@ -1073,3 +1073,46 @@ def test_new_shaping_code_has_the_excel_safe_csv_calls():
     assert source.count('encode("utf-8-sig")') == 1
     assert source.count('sep=";"') == 1
     assert source.count('decimal=","') == 1
+
+
+# -------------------------------------------------------------------- summary badges
+
+
+def test_status_counts_of_the_mixed_run_log(db_path):
+    scenario_mixed(db_path)
+    log = data.load_run_log_raw(str(db_path))
+    assert series.status_counts(log) == {"ok": 4, "partial": 2}
+
+
+def test_status_counts_last_limits_to_the_newest_runs(db_path):
+    scenario_mixed(db_path)
+    log = data.load_run_log_raw(str(db_path))
+    assert series.status_counts(log, last=2) == {"ok": 2}
+    assert series.status_counts(log, last=24) == {"ok": 4, "partial": 2}
+
+
+def test_status_counts_of_nothing_is_empty():
+    assert series.status_counts(log_frame([])) == {}
+
+
+def test_summary_badges_for_the_mixed_history():
+    line = texts.summary_badges({"ok": 4, "partial": 2}, 6)
+    assert line == "Последние 6 сборов: :green-badge[✅ Успешно: 4] :yellow-badge[🟡 Частично: 2]"
+
+
+def test_summary_badges_omit_zero_counts_and_colour_by_status():
+    line = texts.summary_badges(
+        {"ok": 0, "blocked": 3, "error": 1, "abandoned": 1, "running": 1}, 24
+    )
+    assert ":green-badge" not in line
+    assert ":red-badge[⛔ Заблокировано: 3]" in line
+    assert ":gray-badge[❌ Ошибка: 1]" in line
+    assert ":gray-badge[⏸ Прерван: 1]" in line
+    assert ":blue-badge[⏳ Идёт: 1]" in line
+
+
+def test_summary_badges_plural_and_empty_total():
+    assert texts.summary_badges({"ok": 1}, 1).startswith("Последний сбор:")
+    assert texts.summary_badges({"ok": 2}, 2).startswith("Последние 2 сбора:")
+    assert texts.summary_badges({"ok": 21}, 21).startswith("Последние 21 сбор:")
+    assert ":green-badge[✅ Успешно: 0]" in texts.summary_badges({}, 0)
