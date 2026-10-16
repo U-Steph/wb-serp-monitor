@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: Completed 02-03-PLAN.md (graceful SIGTERM, real-process proofs, packaging cross-checks; .env.example still deferred)
-last_updated: "2026-10-16T15:53:57.859Z"
-last_activity: 2026-10-16
+status: executing
+stopped_at: "Session resumed, proceeding to 04-02 (deploy). The user is ordering a SpaceWeb VPS (Ubuntu 24.04, 2 vCPU / 2 GB / 20 GB, Saint Petersburg, trial + hourly billing, this Mac's deploy key) and will send a screenshot, then the server IP; next run `/gsd-execute-phase 4`. Agreed 04-02 Task 1 answers: publish A (already public); method docker, fallbacks SpaceWeb's own Docker Hub mirror `dockerhub.sweb.ru`, then systemd; address https via `{dashed-ip}.sslip.io`, fallback `http://IP:8501`; apt yes; ufw yes; reboot yes (fresh host). Extra host check requested: reachability of api.telegram.org (no token) for a possible Telegram bot phase, decided after the WB probe."
+last_updated: "2026-10-16T21:21:16.128Z"
+last_activity: 2026-10-16 -- Phase 4 execution started
 progress:
   total_phases: 4
   completed_phases: 3
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-16)
 
 **Core value:** Real Wildberries search observations are collected on schedule, appended to history without ever being lost or fabricated, and the UI shows each product's position history honestly (gaps where a product was not found - never invented positions).
-**Current focus:** Phase 1 - Collection Core
+**Current focus:** Phase 4 — publish-deliverables
 
 ## Current Position
 
-Phase: 04 of 4 (publish deliverables)
-Plan: 04-01 complete; 04-02 deferred by user; 04-03 partially done
-Status: Phases 1–3 complete and verified. Phase 4: README/SUBMISSION/systemd/CI done (04-01); repository published public at https://github.com/U-Steph/wb-serp-monitor and source zip + employer message prepared (04-03 parts); deployment to a host (04-02) deferred by the user on 2026-10-16 — no public UI link yet.
-Last activity: 2026-10-16
+Phase: 4 (publish-deliverables) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 4
+Last activity: 2026-10-16 -- Phase 4 execution started
 
-Progress: [██████████] 100% of Phase 1 plans
+Progress: [█████████░] 13 of 15 plans (87%)
 
 ## Performance Metrics
 
@@ -91,7 +91,7 @@ None yet.
 ### Blockers/Concerns
 
 - [Phase 1/4]: WB anti-bot layer returns 403/498 to non-browser clients from the dev machine; reachability from the deploy host is unknown (go/no-go probe in Phase 4). If blocked: honest blocked history, user decides next step - no circumvention.
-- [Phase 4]: Hosting not decided - requires the user to provide a host (likely a Russian VPS with Docker Compose) and approve publishing.
+- [Phase 4]: Host chosen 2026-10-16: SpaceWeb cloud VPS (Saint Petersburg) on the free 3-day trial, then hourly billing; waiting for the user's order and the server IP. Publishing is already done (public repo).
 - [Phase 1]: Delivery-days formula, price field (`min(sizes[].price.product)/100`), rating/review semantics and Moscow `dest=-1257786` are unverified hypotheses; raw inputs are stored so they can be recalibrated.
 - [Phase 2/4]: `.env.example` not created in 02-02 (user permission denies `.env*` writes); ready content at the executor scratchpad (`env_example.txt`, tests in `env_tests.py`); OPS-02 left open, to be covered by the Phase 4 README configuration table or by the user adding the file.
 - .env.example not created (user permission denies .env* writes); content at scratchpad env_example.txt; OPS-02 docs deferred to Phase 4 README
@@ -106,6 +106,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-16T14:50:32.113Z
-Stopped at: Repository published; awaiting a user decision to deploy (04-02) — run /gsd-execute-phase 4 to resume deployment. `.env.example` still not created (user permission rule); README «Конфигурация» covers every setting.
-Resume file: None
+Last session: 2026-10-16T20:55:32.356Z
+Stopped at: Session resumed, proceeding to 04-02 (deploy). The user is ordering a SpaceWeb VPS (Ubuntu 24.04, 2 vCPU / 2 GB / 20 GB, Saint Petersburg, trial + hourly billing, this Mac's deploy key) and will send a screenshot, then the server IP; next run `/gsd-execute-phase 4`. Agreed 04-02 Task 1 answers: publish A (already public); method docker, fallbacks SpaceWeb's own Docker Hub mirror `dockerhub.sweb.ru`, then systemd; address https via `{dashed-ip}.sslip.io`, fallback `http://IP:8501`; apt yes; ufw yes; reboot yes (fresh host). Extra host check requested: reachability of api.telegram.org (no token) for a possible Telegram bot phase, decided after the WB probe.
+Resume file: .planning/phases/04-publish-deliverables/.continue-here.md
