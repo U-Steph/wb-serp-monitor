@@ -16,6 +16,7 @@ import contextlib
 import json
 import logging
 import math
+import signal
 import sqlite3
 import sys
 import time
@@ -32,6 +33,7 @@ from wbmon.normalize import extract_normquery, payload_shape
 from wbmon.orchestrator import run_once
 from wbmon.queries import load_bundled
 from wbmon.scheduler import run_scheduler
+from wbmon.signals import StopFlag, install_stop_handlers
 from wbmon.storage.db import connect_ro
 from wbmon.storage.migrations import init_db
 from wbmon.storage.reader import run_summary
@@ -240,14 +242,19 @@ def main(argv: Sequence[str] | None = None, *, _transport=None, _sleep=None) -> 
         if args.command == "probe":
             return _probe(settings, args.query, transport=_transport, sleep=_sleep or time.sleep)
         if args.command == "collect":
-            run_id = run_once(
-                settings,
-                limit_queries=args.limit_queries,
-                trigger=args.trigger,
-                slot_utc=args.slot,
-                transport=_transport,
-                sleep=_sleep or time.sleep,
-            )
+            # SIGTERM (docker stop, the scheduler's forward) finishes the in-flight query, records
+            # the rest as `terminated` and closes the run; SIGINT keeps its default behaviour.
+            stop = StopFlag()
+            with install_stop_handlers(stop, (signal.SIGTERM,)):
+                run_id = run_once(
+                    settings,
+                    limit_queries=args.limit_queries,
+                    trigger=args.trigger,
+                    slot_utc=args.slot,
+                    transport=_transport,
+                    sleep=_sleep or time.sleep,
+                    should_stop=lambda: stop.requested,
+                )
             if run_id is not None:
                 _log_run_summary(settings.db_path, run_id)
             return 0
