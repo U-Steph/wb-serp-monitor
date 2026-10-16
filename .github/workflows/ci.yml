@@ -8,13 +8,22 @@ on:
   push:
   pull_request:
 
+# The workflow only reads the repository (checkout); nothing here needs a write token.
+permissions:
+  contents: read
+
+# A newer push to the same ref makes an older, still running check obsolete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

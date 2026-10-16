@@ -106,3 +106,18 @@ def test_cwd_and_db_path_are_temporary(tmp_path):
     db_path = Path(os.environ["WBMON_DB_PATH"]).resolve()
     assert db_path.is_relative_to(tmp_path.resolve())
     assert not (REPO_ROOT / "data").exists()
+
+
+# ------------------------------------------------------------------------- CI hardening (IN-09)
+
+CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+
+
+def test_ci_workflow_is_least_privilege_and_covers_supported_pythons():
+    text = CI_WORKFLOW.read_text(encoding="utf-8")
+    assert re.search(r"^permissions:\n  contents: read$", text, re.MULTILINE)
+    assert re.search(r"^concurrency:\n  group: \S.*\n  cancel-in-progress: true$", text, re.M)
+    matrix = re.search(r"python-version: \[(.*?)\]", text)
+    assert matrix is not None
+    assert [v.strip(' "') for v in matrix.group(1).split(",")] == ["3.11", "3.12", "3.13", "3.14"]
+    assert "pull_request_target" not in text
