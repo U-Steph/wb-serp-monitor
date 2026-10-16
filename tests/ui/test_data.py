@@ -290,6 +290,27 @@ def test_heartbeat_unusable_content_is_none(db_path, payload):
     assert data.read_heartbeat(db_path) is None
 
 
+def test_heartbeat_out_of_range_time_is_none_not_an_exception(db_path):
+    """WR-02: astimezone() overflows near year 1; the header must not crash on it."""
+    put(db_path, json.dumps({"ts": "0001-01-01T00:00:00+05:00"}))
+    assert data.read_heartbeat(db_path) is None
+    put(db_path, json.dumps({"ts": "9999-12-31T23:59:59-05:00"}))
+    assert data.read_heartbeat(db_path) is None
+
+
+def test_heartbeat_far_in_the_future_is_unusable(db_path):
+    put(db_path, json.dumps({"ts": "2999-01-01T00:00:00Z"}))
+    assert data.read_heartbeat(db_path) is None
+
+
+def test_heartbeat_slightly_in_the_future_is_clamped_to_now(db_path):
+    ahead = utc_now() + timedelta(seconds=60)
+    put(db_path, json.dumps({"ts": iso_z(ahead)}))
+    beat = data.read_heartbeat(db_path)
+    assert beat is not None
+    assert beat <= utc_now()
+
+
 def test_ui_data_never_uses_the_writer_stack():
     source = Path(data.__file__).read_text(encoding="utf-8")
     for forbidden in ("connect_rw", "storage.writer", "storage.migrations", "storage.lock"):

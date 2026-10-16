@@ -19,6 +19,7 @@ from typing import NamedTuple
 import pandas as pd
 import streamlit as st
 
+from wbmon import clock
 from wbmon.storage.db import connect_ro
 from wbmon.storage.reader import MAX_IN_IDS
 
@@ -30,6 +31,7 @@ SNAPSHOT_RUNS_LIMIT = 500
 HEATMAP_RUNS = 48
 HEARTBEAT_FILE = "scheduler_heartbeat.json"
 HEARTBEAT_STALE_S = 600  # at least twice the scheduler's write interval (it ticks every 30 s)
+HEARTBEAT_FUTURE_TOLERANCE_S = 300  # small clock skew is clamped to "now", more is unusable
 READ_ERRORS = (sqlite3.Error, pd.errors.DatabaseError)
 
 DATA_VERSION_SQL = """
@@ -224,16 +226,25 @@ def data_version(path: str) -> DataVersion:
 
 
 def read_heartbeat(db_path: str | Path) -> datetime | None:
-    """The scheduler heartbeat timestamp (aware UTC), or None if absent or unusable."""
+    """The scheduler heartbeat timestamp (aware UTC), or None if absent or unusable.
+
+    Unusable: unreadable or malformed file, a naive or out-of-range time, or a time further in
+    the future than ``HEARTBEAT_FUTURE_TOLERANCE_S`` (it would read as a false "alive" signal).
+    A slightly future time (clock skew) is clamped to now.
+    """
     file = Path(db_path).parent / HEARTBEAT_FILE
     try:
         stamp = json.loads(file.read_text(encoding="utf-8"))["ts"]
         parsed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        if parsed.tzinfo is None:
+            return None
+        aware = parsed.astimezone(UTC)  # may raise OverflowError near year 1 / 9999
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, OverflowError):
         return None
-    if parsed.tzinfo is None:
+    now = clock.utc_now()
+    if (aware - now).total_seconds() > HEARTBEAT_FUTURE_TOLERANCE_S:
         return None
-    return parsed.astimezone(UTC)
+    return min(aware, now)
 
 
 def load_overview_raw(path: str) -> dict:

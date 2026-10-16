@@ -268,6 +268,34 @@ def test_heartbeat_malformed_json_degrades_to_no_data(db_path):
     assert has(caption_values(at), "Сборщик: нет данных")
 
 
+@pytest.mark.parametrize("ts", ["0001-01-01T00:00:00+05:00", "2999-01-01T00:00:00Z"])
+def test_heartbeat_odd_timestamps_do_not_crash_or_claim_liveness(db_path, ts):
+    """WR-02: an overflowing or future timestamp reads as 'no data', never 'на связи'."""
+    scenario_mixed(db_path)
+    (db_path.parent / "scheduler_heartbeat.json").write_text(
+        json.dumps({"ts": ts}), encoding="utf-8"
+    )
+    at = run_app()
+    assert not at.exception
+    assert has(caption_values(at), "Сборщик: нет данных")
+    assert not has(caption_values(at), "на связи")
+
+
+def test_a_header_failure_does_not_hide_the_tabs(db_path, monkeypatch):
+    """WR-02: the header is guarded like the tab bodies."""
+    scenario_mixed(db_path)
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("header exploded")
+
+    monkeypatch.setattr(series, "freshness", boom)
+    at = run_app()
+    assert not at.exception
+    assert has([e.value for e in at.error], "Не удалось построить этот блок")
+    assert [t.label for t in at.tabs] == FINAL_TABS
+    assert at.sidebar.selectbox
+
+
 # ---------------------------------------------------------------- cache invalidation, read-only
 
 

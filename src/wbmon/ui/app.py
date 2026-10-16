@@ -409,7 +409,7 @@ def main() -> None:
         st.error(texts.ERROR_DB_READ)
         st.stop()
 
-    render_header(overview, latest, blocked_http, settings)
+    _guarded(render_header, overview, latest, blocked_http, settings)
     query, period, n = render_sidebar_filters(queries)
     render_sidebar_totals(overview)
     positions_tab, snapshot_tab, runlog_tab, about_tab = st.tabs(
