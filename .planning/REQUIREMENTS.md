@@ -37,8 +37,8 @@ Sources: TZ (`TZ_Wildberries_short_2026.pdf`), `.planning/PROJECT.md`, `.plannin
 
 - [x] **STOR-01**: SQLite database (WAL, `busy_timeout`, `foreign_keys=ON`) with tables for queries, runs, run_queries (attempt log), observations; DDL created idempotently by `init-db`.
 - [x] **STOR-02**: History is append-only: observations are never updated or deleted (DB triggers forbid UPDATE/DELETE); re-running collection only appends; no `INSERT OR REPLACE`.
-- [ ] **STOR-03**: Each query's observations are written in one transaction together with its run_queries row; a crashed run stays visible (`running` → `abandoned` on next start).
-- [ ] **STOR-04**: Indexes support: list queries; list `nm_id`s ever seen for a query; positions of selected `nm_id`s over time; latest characteristics; run log — each answering in < 1 s on a week of data (~2.4M rows).
+- [x] **STOR-03**: Each query's observations are written in one transaction together with its run_queries row; a crashed run stays visible (`running` → `abandoned` on next start).
+- [x] **STOR-04**: Indexes support: list queries; list `nm_id`s ever seen for a query; positions of selected `nm_id`s over time; latest characteristics; run log — each answering in < 1 s on a week of data (~2.4M rows).
 - [ ] **STOR-05**: Read-only access path for the UI (`mode=ro` URI + `query_only`), short-lived connections.
 
 ### Scheduling & operation (SCHED)
@@ -124,8 +124,8 @@ Which phases cover which requirements. Updated during roadmap creation (2026-10-
 | DATA-07 | Phase 1 | Complete |
 | STOR-01 | Phase 1 | Complete |
 | STOR-02 | Phase 1 | Complete |
-| STOR-03 | Phase 1 | Pending |
-| STOR-04 | Phase 1 | Pending |
+| STOR-03 | Phase 1 | Complete |
+| STOR-04 | Phase 1 | Complete |
 | STOR-05 | Phase 3 | Pending |
 | SCHED-01 | Phase 1 | Complete |
 | SCHED-02 | Phase 2 | Pending |

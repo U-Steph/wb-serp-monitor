@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-02-PLAN.md (normalizer fields, delivery days, pager)
-last_updated: "2026-10-16T13:52:42.848Z"
-last_activity: 2026-10-16 - Completed 01-01 walking skeleton (wbmon init-db + offline collect)
+stopped_at: Completed 01-03-PLAN.md (durable append-only storage, run lock, STOR-04 readers)
+last_updated: "2026-10-16T13:59:23.746Z"
+last_activity: 2026-10-16 - Completed 01-03 durable append-only storage
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 5
-  completed_plans: 2
-  percent: 40
+  completed_plans: 3
+  percent: 60
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-16)
 ## Current Position
 
 Phase: 1 of 4 (Collection Core)
-Plan: 2 of 5 in current phase (01-01 and 01-02 complete; 01-03 and 01-04 next)
+Plan: 3 of 5 in current phase (01-01, 01-02 and 01-03 complete; 01-04 next, then 01-05)
 Status: Executing Phase 1
-Last activity: 2026-10-16 - Completed 01-02 normalizer fields, delivery days, pager
+Last activity: 2026-10-16 - Completed 01-03 durable append-only storage
 
-Progress: [████░░░░░░] 40%
+Progress: [██████░░░░] 60%
 
 ## Performance Metrics
 
@@ -54,6 +54,7 @@ Progress: [████░░░░░░] 40%
 *Updated after each plan completion*
 | Phase 01 P01 | 30min | 3 tasks | 27 files |
 | Phase 01 P02 | 25min | 2 tasks | 11 files |
+| Phase 01 P03 | 25min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -67,6 +68,7 @@ Recent decisions affecting current work:
 - [Roadmap]: Phase 1 owns the schema freeze (non-backfillable fields) and abandoned-run marking; schema is the contract for Phase 3.
 - [Constraint]: No anti-bot circumvention of any kind; no synthetic observations in a real DB (tests use temp DBs only).
 - [Phase 01]: [Phase 1/01-01]: .gitignore keeps data/ and re-includes src/wbmon/data/; finish_run raises if run not running; orchestrator closes run as error on loop exception
+- [Phase 01]: [Phase 1/01-03]: latest_characteristics picks one row per nm_id by id (collected_at DESC, id DESC); record_query falls back to an error/db_write_failed row after rollback; run_lock is a non-blocking flock on {db_path}.lock
 
 ### Pending Todos
 
@@ -88,6 +90,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-16T13:52:40.108Z
+Last session: 2026-10-16T13:59:19.648Z
 Stopped at: Completed 01-01-PLAN.md (walking skeleton)
 Resume file: None

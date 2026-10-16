@@ -64,7 +64,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 01-02-PLAN.md — Complete product fields (price, rating, reviews, delivery days, seller, ad flags; NULL when unknown) + pure top-N pagination state machine (wave 2)
-- [ ] 01-03-PLAN.md — Durable append-only storage: DB-enforced guarantees, atomic per-query writes, abandon_stale_runs, run lock, STOR-04 read paths + 2.35M-row perf test (wave 2)
+- [x] 01-03-PLAN.md — Durable append-only storage: DB-enforced guarantees, atomic per-query writes, abandon_stale_runs, run lock, STOR-04 read paths + 2.35M-row perf test (wave 2)
 - [ ] 01-04-PLAN.md — Honest WB access: response classification, polite client with bounded retries, Google Sheet source with bundled fallback, `wbmon probe` (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
