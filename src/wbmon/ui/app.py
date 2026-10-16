@@ -298,7 +298,9 @@ def render_snapshot_tab(
         options=run_ids,
         value=run_ids[-1],
         format_func=labels.__getitem__,
-        key=f"snap_{query_id}",
+        # The newest run id is part of the key: a run that lands while the page is open resets the
+        # slider to "latest" instead of leaving it pinned to an hour-old snapshot.
+        key=f"snap_{query_id}_{run_ids[-1]}",
     )
     snapshot = data.load_snapshot(path, ver, int(run_id), query_id)
     metrics = series.snapshot_metrics(snapshot, statuses[int(run_id)])

@@ -777,6 +777,25 @@ def test_changing_the_query_resets_the_slider_to_its_newest_run(db_path):
     assert len(frame) == len(Q3_IDS)
 
 
+def test_snapshot_slider_follows_a_new_run_that_lands_while_the_page_is_open(db_path):
+    """WR-04: the key-pinned slider used to stay on the previous latest run."""
+    built = scenario_mixed(db_path)
+    at = run_app()
+    assert at.select_slider[0].value == built.run_ids[-1]
+    started = iso_z(utc_now() - timedelta(minutes=1))
+    spec = RunSpec(
+        started_at=started,
+        results={text: ok_result(started, Q2_IDS) for text in (Q1, Q2, Q3)},
+        trigger="manual",
+        n_queries=3,
+    )
+    new_run = append_run(db_path, spec)
+    at.run()
+    assert not at.exception
+    assert at.select_slider[0].value == new_run
+    assert len(at.select_slider[0].options) == 6  # five runs with data, plus the new one
+
+
 def test_all_blocked_snapshot_tab_shows_the_info_and_the_attempts(db_path):
     scenario_all_blocked(db_path)
     at = run_app()
