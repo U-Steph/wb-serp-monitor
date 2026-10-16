@@ -19,7 +19,7 @@ product was not found — never invented positions).
 
 ### Validated
 
-(None yet — ship to validate)
+- ✓ Collection core: sheet/bundled query source with byte-exact wording, plain-httpx WB client with honest outcome classification, multi-page top-N in SERP order, normalizer (price/rating/reviews/delivery/seller/ads, NULL for unknown), append-only SQLite with run log, lock/slot/abandon, breaker and deadline, CLI `init-db`/`collect`/`probe`, 598 offline tests on Python 3.11–3.14 — Phase 1 (QRY-01..04, COL-01..06, DATA-01..07, STOR-01..04, SCHED-01, SCHED-04, OPS-04)
 
 ### Active
 
@@ -131,13 +131,13 @@ likely the user's Russian VPS via Docker Compose; the UI must be reachable by a 
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Use WB public search JSON endpoint with plain httpx (no browser automation) | Same data the site renders; respects the anti-bot boundary | — Pending |
-| SQLite in WAL mode as default DB | Single node, ~336k rows/day is fine, zero ops; Postgres optional later | — Pending |
+| Use WB public search JSON endpoint with plain httpx (no browser automation) | Same data the site renders; respects the anti-bot boundary | ⚠️ Revisit — implemented; `wbmon probe` from the dev machine (DE VPN egress) returns 403 `server: wbaas`; reachability from a Russian host still to be tested in Phase 4 |
+| SQLite in WAL mode as default DB | Single node, ~336k rows/day is fine, zero ops; Postgres optional later | ✓ Good — every UI read path < 30 ms on a 2.35M-row DB (Phase 1 perf test) |
 | Streamlit + Plotly UI, reversed Y axis, gaps for missing runs | TZ suggests Streamlit; Plotly gives hover + reversed axis + gaps | — Pending |
 | Position = 1-based index across pages in displayed order, promoted slots included and flagged | TZ: "в том порядке, в котором они представлены в выдаче" | — Pending |
 | Delivery days = calendar-day diff (Europe/Moscow) of collected_at vs collected_at + time1 + time2 h | TZ: today = 0, tomorrow = 1; WB exposes hours | — Pending (verify on live data) |
 | Queries loaded from Google Sheet CSV export each run, bundled fallback | TZ: Sheet wording wins | — Pending |
-| Every run and every query attempt is logged (status ok / blocked / error) | Honest stability reporting in UI | — Pending |
+| Every run and every query attempt is logged (status ok / blocked / error) | Honest stability reporting in UI | ✓ Good — run_queries log + breaker/deadline/abandoned states implemented (Phase 1) |
 | GSD config chosen autonomously: YOLO, coarse granularity, parallel, research + plan-check + verifier on, balanced models | User asked for a fully autonomous solution | ✓ Good |
 
 ## Evolution
@@ -158,4 +158,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-16 after initialization*
+*Last updated: 2026-10-16 after Phase 1 (Collection Core)*
