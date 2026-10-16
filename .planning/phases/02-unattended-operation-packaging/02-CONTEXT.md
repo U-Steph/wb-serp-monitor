@@ -77,3 +77,14 @@ Phase 1 delivers `src/wbmon/` (config `Settings.from_env()`, `clock.py` with `pa
 - Autoheal sidecar — not needed.
 
 </deferred>
+
+<addendum date="2026-10-16" source="orchestrator, after 02-RESEARCH.md">
+## Addendum — decisions on open questions raised by phase research (auto-accepted)
+
+- **D2-A1 Status on SIGTERM:** keep the Phase 1 `finish_run` derivation — `partial` if ≥1 query succeeded before termination, `error` if none did; remaining queries recorded as `error` / `error_class='terminated'` without requests (additive `terminated` in `ERROR_CLASSES`, no migration).
+- **D2-A2 Child process API:** `subprocess.Popen` + poll loop (not `subprocess.run`) so the scheduler keeps writing the heartbeat during a run, forwards SIGTERM and escalates SIGTERM→SIGKILL after 30 s; child started with `start_new_session=True`; scheduler tick 1 s (within the ≤30 s bound), heartbeat written at least every 30 s.
+- **D2-A3 Web exposure:** add `WEB_BIND` (default `0.0.0.0` so the UI is reachable by a public link without Caddy; set `127.0.0.1` when the `tls` profile/Caddy is used) → compose `ports: "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-8501}:8501"`.
+- **D2-A4 Dev dependencies:** `pyyaml` and `jsonschema` may be added to the `dev` extra in `pyproject.toml` (Phase 2 is the only phase editing it now); D-A8 precedent applies — automated PyPI metadata check, no human checkpoint. Vendoring the compose-spec JSON schema under `tests/data/` (license noted) is accepted.
+- **D2-A5 Makefile:** NO `CONFIRM=yes` guard — the Makefile is a human-facing tool and live collection is the product's purpose. The no-live-WB rule binds the agents/tests, not the shipped commands (agents simply must not run `make collect-once` / `make scheduler`).
+- **D2-A6 Packaging details accepted from research:** pin `WBMON_DB_PATH=/data/wbmon.sqlite3` in compose `environment` (wins over env_file), healthcheck exit codes only 0/1, `stop_grace_period: 90s` for collector, exec-form commands, top-level volume `name: wbmon_data`, allowlist `.dockerignore`, no `# syntax=` line, `PYTHON_IMAGE`/`CADDY_IMAGE` build args + `PIP_INDEX_URL` hook for registries unreachable from a Russian VPS, build-time smoke test that the bundled queries file is packaged, Compose ≥ 2.24 noted for `env_file: required: false`.
+</addendum>
