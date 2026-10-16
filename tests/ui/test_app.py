@@ -7,6 +7,7 @@ import json
 import subprocess
 import sys
 import tomllib
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 
@@ -25,6 +26,7 @@ from ui.dbbuilder import (
     REPO_ROOT,
     RunSpec,
     append_run,
+    build_db,
     ok_result,
     scenario_all_blocked,
     scenario_latest,
@@ -32,6 +34,7 @@ from ui.dbbuilder import (
 )
 from wbmon.clock import iso_z, utc_now
 from wbmon.storage.db import connect_ro
+from wbmon.ui import series
 
 APP = str(Path(__file__).resolve().parents[2] / "src" / "wbmon" / "ui" / "app.py")
 NO_SUCCESS = "Успешных сборов пока нет"
@@ -75,6 +78,14 @@ def counts(db_path: Path) -> tuple:
             con.execute("SELECT COUNT(*) FROM observations").fetchone()[0],
             con.execute("PRAGMA user_version").fetchone()[0],
         )
+
+
+def parse_started(db_path: Path, run_id: int):
+    from wbmon.clock import parse_iso_z
+
+    with contextlib.closing(connect_ro(db_path)) as con:
+        row = con.execute("SELECT started_at FROM runs WHERE id = ?", (run_id,)).fetchone()
+    return parse_iso_z(row[0])
 
 
 def has(values, needle: str) -> bool:
@@ -320,3 +331,228 @@ def test_streamlit_reads_the_theme_file_from_the_repo_root():
     )
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.split() == ["none", "#7B2CBF"]
+
+
+# ----------------------------------------------------------------------------- «Позиции» tab
+
+A, B, C, D, E, F = (NM[k] for k in "ABCDEF")
+NOT_IN_LATEST = " · не в последней выдаче"
+
+
+def chart_specs(at: AppTest) -> list[dict]:
+    return [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
+
+
+def chart_spec(at: AppTest) -> dict:
+    specs = chart_specs(at)
+    assert len(specs) == 1
+    return specs[0]
+
+
+def trace_named(spec: dict, nm_id: int) -> dict:
+    return next(t for t in spec["data"] if t["name"].startswith(f"ID {nm_id} "))
+
+
+def msk_x(db_path: Path, run_id: int) -> str:
+    """The figure x string of a run, computed independently of the chart code."""
+    with contextlib.closing(connect_ro(db_path)) as con:
+        started = con.execute("SELECT started_at FROM runs WHERE id = ?", (run_id,)).fetchone()[0]
+    return series.to_msk(pd.Series([started])).iloc[0].strftime("%Y-%m-%d %H:%M:%S")
+
+
+def info_values(at: AppTest) -> list[str]:
+    return [i.value for i in at.info]
+
+
+def covers(shape: dict, x: str) -> bool:
+    return shape["x0"] <= x <= shape["x1"]
+
+
+def test_sidebar_offers_every_query_in_sheet_order_with_original_wording(db_path):
+    scenario_mixed(db_path)
+    at = run_app()
+    assert not at.exception
+    assert at.sidebar.selectbox[0].options == [f"01. {Q1}", f"02. {Q2}", f"03. {Q3}"]
+    assert Q2 in at.sidebar.selectbox[0].options[1]  # Cyrillic "х" kept
+    assert at.sidebar.selectbox[0].options[2].endswith("50x70")  # Latin "x" kept
+    assert [t.label for t in at.tabs][:2] == ["📈 Позиции", "🩺 Журнал сборов"]
+    assert at.sidebar.segmented_control[0].value == "Всё время"
+    assert at.sidebar.number_input[0].value == 5
+
+
+def test_positions_tab_draws_the_honest_chart_of_the_default_top_five(db_path):
+    built = scenario_mixed(db_path)
+    r1, r2, r3, r4, r5, r6 = built.run_ids
+    at = run_app()
+    assert not at.exception
+    assert at.multiselect[0].value == [A, B, D, C, E]
+    options = at.multiselect[0].options
+    assert len(options) == 6
+    assert options[0] == f"{A} · ТЕСТ-БРЕНД · ТЕСТ товар {A}"
+    assert options[-1].endswith(NOT_IN_LATEST)
+    assert f"{F} · " in options[-1]
+
+    spec = chart_spec(at)
+    y_range = spec["layout"]["yaxis"]["range"]
+    assert y_range[0] > y_range[1] and y_range[1] == -0.5
+    shapes = spec["layout"]["shapes"]
+    assert len(shapes) == 2
+    x3 = msk_x(db_path, r3)
+    assert not any(covers(shape, x3) for shape in shapes)
+    assert sum(covers(shape, msk_x(db_path, r2)) for shape in shapes) == 1
+
+    b = trace_named(spec, B)
+    by_x = dict(zip(b["x"], b["y"], strict=True))
+    assert by_x[x3] is None
+    assert by_x[msk_x(db_path, r2)] is None
+    assert by_x[msk_x(db_path, r1)] == 2
+    a = trace_named(spec, A)
+    assert dict(zip(a["x"], a["marker"]["symbol"], strict=True))[x3] == "diamond"
+    assert dict(zip(a["x"], a["y"], strict=True))[msk_x(db_path, r4)] == 2
+    c = trace_named(spec, C)
+    prices = dict(zip(c["x"], [d[1] for d in c["customdata"]], strict=True))
+    assert prices[msk_x(db_path, r5)] == "—"
+    assert [t["name"] for t in spec["data"][-2:]] == ["◆ рекламное размещение", "сбор не удался"]
+
+    captions = caption_values(at)
+    assert has(captions, "Разрыв линии")
+    assert has(
+        captions,
+        "Показано товаров: 5; сборов в периоде: 6; без данных (сбор не удался): 2.",
+    )
+    assert not at.info
+
+
+def test_changing_the_query_resets_the_selection_to_its_top(db_path):
+    built = scenario_mixed(db_path)
+    at = run_app()
+    at.sidebar.selectbox[0].select(built.query_ids[Q2]).run()
+    assert not at.exception
+    assert at.multiselect[0].value == list(Q2_IDS)
+    spec = chart_spec(at)
+    assert spec["layout"].get("shapes", []) == []
+    assert has(caption_values(at), "Показано товаров: 3; сборов в периоде: 6; без данных")
+
+
+def test_changing_the_default_count_resets_the_selection(db_path):
+    scenario_mixed(db_path)
+    at = run_app()
+    at.sidebar.number_input[0].set_value(2).run()
+    assert not at.exception
+    assert at.multiselect[0].value == [A, B]
+    at.sidebar.number_input[0].set_value(20).run()
+    assert not at.exception
+    assert at.multiselect[0].value == [A, B, D, C, E]
+    assert has(caption_values(at), "Показано не более 15 товаров")
+
+
+def test_more_than_fifteen_products_are_capped_at_the_default(db_path):
+    started = iso_z(utc_now() - timedelta(minutes=10))
+    ids = tuple(range(910000001, 910000019))
+    build_db(db_path, [RunSpec(started, {Q1: ok_result(started, ids)}, n_queries=3)])
+    at = run_app()
+    at.sidebar.number_input[0].set_value(20).run()
+    assert not at.exception
+    assert at.multiselect[0].value == list(ids[:15])
+    assert len(at.multiselect[0].options) == 18
+
+
+def test_an_empty_selection_shows_the_hint_and_still_draws_the_skeleton(db_path):
+    scenario_mixed(db_path)
+    at = run_app()
+    at.multiselect[0].set_value([]).run()
+    assert not at.exception
+    assert has(info_values(at), "Выберите хотя бы один товар")
+    spec = chart_spec(at)
+    assert len(spec["layout"]["shapes"]) == 2
+    assert [t["name"] for t in spec["data"]] == ["◆ рекламное размещение", "сбор не удался"]
+    assert has(caption_values(at), "Показано товаров: 0; сборов в периоде: 6")
+
+
+def test_period_narrows_the_grid_but_not_the_picker(db_path):
+    built = scenario_mixed(db_path)
+    started = iso_z(parse_started(db_path, built.run_ids[-1]) - timedelta(hours=30))
+    append_run(db_path, RunSpec(started, {Q1: ok_result(started, (A,))}, "scheduler", n_queries=1))
+    at = run_app()
+    assert not at.exception
+    assert has(caption_values(at), "сборов в периоде: 7")
+    at.sidebar.segmented_control[0].set_value("24 ч").run()
+    assert not at.exception
+    assert has(caption_values(at), "сборов в периоде: 6")
+    assert len(at.multiselect[0].options) == 6
+
+
+def test_a_period_without_runs_for_the_query_says_so(db_path):
+    now = utc_now()
+    old = iso_z(now - timedelta(hours=40))
+    new = iso_z(now - timedelta(minutes=10))
+    built = build_db(
+        db_path,
+        [
+            RunSpec(old, {Q2: ok_result(old, Q2_IDS)}, n_queries=3),
+            RunSpec(new, {Q1: ok_result(new, (A,))}, trigger="manual", n_queries=1),
+        ],
+    )
+    at = run_app()
+    at.sidebar.selectbox[0].select(built.query_ids[Q2]).run()
+    assert not at.exception
+    assert has(caption_values(at), "сборов в периоде: 1")
+    at.sidebar.segmented_control[0].set_value("24 ч").run()
+    assert not at.exception
+    assert has(info_values(at), "За выбранный период нет сборов по этому запросу")
+    assert not at.get("plotly_chart")
+
+
+def test_an_all_blocked_query_shows_the_info_and_a_band_only_skeleton(db_path):
+    scenario_all_blocked(db_path)
+    at = run_app()
+    assert not at.exception
+    assert has(info_values(at), "По этому запросу пока нет успешных сборов")
+    picker = at.multiselect[0]
+    assert picker.disabled
+    assert picker.options == []
+    spec = chart_spec(at)
+    assert len(spec["layout"]["shapes"]) == 3
+    assert [t["name"] for t in spec["data"]] == ["◆ рекламное размещение", "сбор не удался"]
+    assert not has(info_values(at), "Выберите хотя бы один товар")
+    assert has(caption_values(at), "без данных (сбор не удался): 3.")
+
+
+def test_a_run_in_flight_adds_neither_a_column_nor_a_band_to_unreached_queries(db_path):
+    built = scenario_latest(db_path, "running")
+    at = run_app()
+    at.sidebar.selectbox[0].select(built.query_ids[Q2]).run()
+    assert not at.exception
+    assert chart_spec(at)["layout"].get("shapes", []) == []
+    assert has(caption_values(at), "сборов в периоде: 6")
+    at.sidebar.selectbox[0].select(built.query_ids[Q1]).run()
+    assert has(caption_values(at), "сборов в периоде: 7")
+
+
+def test_zero_runs_show_only_the_info_in_the_positions_tab(db_path):
+    from wbmon.storage.migrations import init_db
+
+    init_db(db_path)
+    at = run_app()
+    assert not at.exception
+    assert not at.get("plotly_chart")
+    assert not at.multiselect
+
+
+def test_marketplace_text_never_becomes_markdown_or_markup(db_path):
+    started = iso_z(utc_now() - timedelta(minutes=10))
+    brand = '<a href="https://evil.example">x</a>'
+    name = "$x^2$ [ссылка](http://e.x) **b**"
+    plain = ok_result(started, (A, B))
+    rows = tuple(replace(row, brand=brand, name=name) for row in plain.observations)
+    build_db(db_path, [RunSpec(started, {Q1: replace(plain, observations=rows)}, n_queries=3)])
+    at = run_app()
+    assert not at.exception
+    labels = at.multiselect[0].options
+    assert labels[0] == f"{A} · {brand} · {name}"
+    text = json.dumps(chart_spec(at), ensure_ascii=False)
+    assert "<a href" not in text
+    assert 'evil.example">' not in text
+    shown = markdown_values(at) + caption_values(at) + info_values(at)
+    assert not has(shown, "evil.example")
+    assert not has(shown, "http://e.x")

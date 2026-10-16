@@ -316,3 +316,11 @@ def default_selection(top_ids: Sequence[int], option_ids: Sequence[int], n: int)
     offered = {int(i) for i in option_ids}
     kept = [int(i) for i in top_ids if int(i) in offered]
     return kept[: max(0, min(int(n), MAX_SELECTED))]
+
+
+def series_names(options: pd.DataFrame) -> dict[int, str]:
+    """Legend names ``ID {nm_id} · {brand or dash}`` for every product of the picker frame."""
+    return {
+        int(nm_id): f"ID {int(nm_id)} · {_text_or_dash(brand)}"
+        for nm_id, brand in zip(options["nm_id"], options["brand"], strict=True)
+    }
