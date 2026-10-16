@@ -283,12 +283,13 @@ class Scheduler:
 
     def _handle_slot(self, now: datetime, slot: str, *, first: bool) -> None:
         late_s = int((now - parse_iso_z(slot)).total_seconds())
-        if self.has_run(slot):
-            log_event("slot_exists", slot=slot)
-        elif should_catch_up(now, slot, False, self.grace):
+        ran = self.has_run(slot)
+        if should_catch_up(now, slot, ran, self.grace):
             if first or late_s > _LATE_START_LOG_S:
                 log_event("catch_up", slot=slot, late_s=late_s)
             self.run_slot(slot)
+        elif ran:
+            log_event("slot_exists", slot=slot)
         else:
             log_event("slot_missed", level=logging.WARNING, slot=slot, late_s=late_s)
 
