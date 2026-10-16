@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import json
 import sqlite3
@@ -112,18 +113,17 @@ def test_overview_of_the_mixed_history(db_path):
         "first_started": first_started,
         "last_started": scalar(db_path, "SELECT started_at FROM runs WHERE id = ?", (last,)),
         "last_ok_finished": scalar(db_path, "SELECT finished_at FROM runs WHERE id = ?", (last,)),
-        "n_obs": 60,
-        "n_products": 12,
         "n_queries": 3,
         "top_n_latest": 200,
     }
+    assert data.load_totals_raw(str(db_path)) == {"n_obs": 60, "n_products": 12}
 
 
 def test_overview_of_an_empty_database(db_path):
     init_db(db_path)
     overview = data.load_overview_raw(str(db_path))
-    assert overview["n_runs"] == overview["n_ok_runs"] == overview["n_obs"] == 0
-    assert overview["n_products"] == overview["n_queries"] == 0
+    assert overview["n_runs"] == overview["n_ok_runs"] == overview["n_queries"] == 0
+    assert data.load_totals_raw(str(db_path)) == {"n_obs": 0, "n_products": 0}
     assert overview["first_started"] is None
     assert overview["last_ok_finished"] is None
     assert overview["top_n_latest"] is None
@@ -135,7 +135,7 @@ def test_overview_of_an_all_blocked_history(db_path):
     assert overview["n_runs"] == 3
     assert overview["n_ok_runs"] == 0
     assert overview["last_ok_finished"] is None
-    assert overview["n_obs"] == 0
+    assert data.load_totals_raw(str(db_path))["n_obs"] == 0
 
 
 # ---------------------------------------------------------------------------- run log
@@ -199,6 +199,7 @@ def test_every_loader_opens_one_connection_and_closes_it(db_path, monkeypatch):
         lambda: data.db_status(path),
         lambda: data.data_version(path),
         lambda: data.load_overview_raw(path),
+        lambda: data.load_totals_raw(path),
         lambda: data.load_run_log_raw(path),
         lambda: data.load_latest_run_detail_raw(path, built.run_ids[-1]),
         lambda: data.load_queries_raw(path),
@@ -244,6 +245,42 @@ def test_cached_twin_runs_the_raw_loader_once_per_data_version(db_path, monkeypa
     assert len(calls) == 1
     data.load_overview(path, data.DataVersion(2, 5, "ok"))
     assert len(calls) == 2
+
+
+def test_totals_are_computed_once_per_run_not_per_attempt_or_per_minute(db_path, monkeypatch):
+    """WR-06: the observations scans follow the newest run, not every query attempt or TTL."""
+    init_db(db_path)
+    calls: list[str] = []
+
+    def counting(path):
+        calls.append(path)
+        return {"n_obs": len(calls), "n_products": 1}
+
+    monkeypatch.setattr(data, "load_totals_raw", counting)
+    path = str(db_path)
+    first = data.load_totals(path, data.DataVersion(5, 100, "running"))
+    # more attempts of the same in-flight run: no rescan
+    assert data.load_totals(path, data.DataVersion(5, 101, "running")) == first
+    assert data.load_totals(path, data.DataVersion(5, 140, "running")) == first
+    assert len(calls) == 1
+    # the run finishes: recount once
+    assert data.load_totals(path, data.DataVersion(5, 140, "ok"))["n_obs"] == 2
+    # a new run: recount once more
+    assert data.load_totals(path, data.DataVersion(6, 141, "running"))["n_obs"] == 3
+    data.load_totals(path, data.DataVersion(6, 150, "running"))
+    assert len(calls) == 3
+
+
+def test_totals_cache_has_no_time_to_live():
+    """WR-06: unlike the 60 s loaders, the totals entry never expires on its own."""
+    tree = ast.parse(Path(data.__file__).read_text(encoding="utf-8"))
+    func = next(
+        n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_load_totals"
+    )
+    (decorator,) = func.decorator_list
+    assert isinstance(decorator, ast.Call)
+    ttl = next(kw.value for kw in decorator.keywords if kw.arg == "ttl")
+    assert isinstance(ttl, ast.Constant) and ttl.value is None
 
 
 def test_heartbeat_file_name_matches_the_scheduler_contract():

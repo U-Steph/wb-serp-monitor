@@ -398,7 +398,7 @@ def main() -> None:
 
     try:
         ver = data.data_version(path)
-        overview = data.load_overview(path, ver)
+        overview = {**data.load_overview(path, ver), **data.load_totals(path, ver)}
         run_log = data.load_run_log(path, ver)
         queries = data.load_queries(path, ver)
         latest = None if run_log.empty else run_log.iloc[0].to_dict()

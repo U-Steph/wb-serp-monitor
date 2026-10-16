@@ -178,7 +178,9 @@ def test_header_loaders_are_fast(perf_db):
     version = timed("data_version", lambda: data.data_version(path))
     assert version.latest_run_id == N_RUNS
     overview = timed("load_overview_raw", lambda: data.load_overview_raw(path))
-    assert overview["n_runs"] == N_RUNS and overview["n_obs"] == EXPECTED_OBSERVATIONS
+    assert overview["n_runs"] == N_RUNS
+    totals = timed("load_totals_raw", lambda: data.load_totals_raw(path))
+    assert totals["n_obs"] == EXPECTED_OBSERVATIONS
     assert len(timed("load_queries_raw", lambda: data.load_queries_raw(path))) == N_QUERIES
     log = timed("load_run_log_raw", lambda: data.load_run_log_raw(path))
     assert len(log) == min(N_RUNS, data.RUN_LOG_LIMIT)

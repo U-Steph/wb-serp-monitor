@@ -25,6 +25,7 @@ from wbmon.storage.reader import MAX_IN_IDS
 
 CACHE_TTL_S = 60
 CACHE_MAX_ENTRIES = 256
+TOTALS_MAX_ENTRIES = 8  # only the newest run key is ever asked for
 RUN_LOG_LIMIT = 200
 ATTEMPTS_LIMIT = 10
 SNAPSHOT_RUNS_LIMIT = 500
@@ -51,7 +52,8 @@ LAST_OK_FINISHED_SQL = (
 )
 TOP_N_LATEST_SQL = "SELECT top_n FROM runs ORDER BY id DESC LIMIT 1"
 N_QUERIES_SQL = "SELECT COUNT(*) FROM queries"
-# The two observation counts stay separate statements: combined they force a full table scan.
+# Full scans of the biggest table: only ever run through the version-keyed ``load_totals`` (WR-06).
+# The two counts stay separate statements: combined they force a single, slower scan.
 N_OBS_SQL = "SELECT COUNT(*) FROM observations"
 N_PRODUCTS_SQL = "SELECT COUNT(DISTINCT nm_id) FROM observations"
 RUN_LOG_SQL = """
@@ -248,7 +250,7 @@ def read_heartbeat(db_path: str | Path) -> datetime | None:
 
 
 def load_overview_raw(path: str) -> dict:
-    """Totals for the sidebar and the freshness badge."""
+    """Cheap header numbers (a few index lookups): freshness badge, run counts, query count."""
     with contextlib.closing(connect_ro(path)) as con:
         n_runs, n_ok_runs, first_started, last_started = con.execute(OVERVIEW_RUNS_SQL).fetchone()
         return {
@@ -257,10 +259,17 @@ def load_overview_raw(path: str) -> dict:
             "first_started": first_started,
             "last_started": last_started,
             "last_ok_finished": _scalar(con, LAST_OK_FINISHED_SQL),
-            "n_obs": int(_scalar(con, N_OBS_SQL)),  # type: ignore[call-overload]
-            "n_products": int(_scalar(con, N_PRODUCTS_SQL)),  # type: ignore[call-overload]
             "n_queries": int(_scalar(con, N_QUERIES_SQL)),  # type: ignore[call-overload]
             "top_n_latest": _scalar(con, TOP_N_LATEST_SQL),
+        }
+
+
+def load_totals_raw(path: str) -> dict:
+    """Observation and distinct-product totals: two full scans of ``observations``."""
+    with contextlib.closing(connect_ro(path)) as con:
+        return {
+            "n_obs": int(_scalar(con, N_OBS_SQL)),  # type: ignore[call-overload]
+            "n_products": int(_scalar(con, N_PRODUCTS_SQL)),  # type: ignore[call-overload]
         }
 
 
@@ -357,6 +366,24 @@ def load_status_matrix_raw(
             return _df(con, HEATMAP_RUNS_SQL, params), _df(con, STATUS_MATRIX_SQL, params)
         finally:
             con.rollback()
+
+
+@st.cache_data(ttl=None, max_entries=TOTALS_MAX_ENTRIES, show_spinner=False)
+def _load_totals(path: str, latest_run_id: int | None, latest_status: str | None) -> dict:
+    """Cached ``load_totals_raw``: no TTL, only the run key below moves it."""
+    del latest_run_id, latest_status
+    return load_totals_raw(path)
+
+
+def load_totals(path: str, ver: DataVersion) -> dict:
+    """The expensive totals, computed once per new run (and once more when it finishes).
+
+    Keyed on the newest run id and its status only, not on ``last_rq_id``: that moves with every
+    query attempt of a run in flight and would rescan ``observations`` all the time. The total
+    therefore lags by at most the one run in progress; there is no TTL, so visitors never pay for
+    a rescan just because a minute has passed.
+    """
+    return _load_totals(path, ver.latest_run_id, ver.latest_status)
 
 
 @st.cache_data(ttl=CACHE_TTL_S, max_entries=CACHE_MAX_ENTRIES, show_spinner=False)
