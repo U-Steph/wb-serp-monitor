@@ -7,6 +7,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
 
+from wbmon.classify import sanitize_text
 from wbmon.models import OBSERVATION_COLUMNS, QueryResult
 
 # Column names come from the frozen ObservationRow dataclass, never from external text.
@@ -31,7 +32,8 @@ INSERT INTO run_queries (
 """
 
 ABANDONED_ERROR = "process died before finishing"
-_ERROR_MESSAGE_LIMIT = 200
+_ERROR_MESSAGE_LIMIT = 200  # the db_write_failed fallback message
+ERROR_MESSAGE_MAX_CHARS = 500  # hard cap on any stored error_message
 
 _AGGREGATE_SQL = """
 SELECT COUNT(*),
@@ -145,7 +147,11 @@ class Writer:
             "normquery": result.normquery,
             "ad_slot_mismatch": result.ad_slot_mismatch,
             "duplicates_dropped": result.duplicates_dropped,
-            "error_message": result.error_message,
+            "error_message": (
+                None
+                if result.error_message is None
+                else sanitize_text(result.error_message, ERROR_MESSAGE_MAX_CHARS)
+            ),
             "started_at": result.started_at,
             "duration_ms": result.duration_ms,
         }
@@ -167,7 +173,9 @@ class Writer:
                 "is_complete": 0,
                 "ad_slot_mismatch": 0,
                 "duplicates_dropped": 0,
-                "error_message": f"{type(exc).__name__}: {exc}"[:_ERROR_MESSAGE_LIMIT],
+                "error_message": sanitize_text(
+                    f"{type(exc).__name__}: {exc}", _ERROR_MESSAGE_LIMIT
+                ),
             }
             with self._transaction() as con:
                 con.execute(_INSERT_RUN_QUERY_SQL, failure)

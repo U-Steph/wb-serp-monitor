@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import email.utils
 import json
+import unicodedata
 from datetime import UTC, datetime
 
 from wbmon.models import PageFetch, PageVerdict
@@ -18,6 +19,7 @@ MAX_BODY_BYTES = 8 * 1024 * 1024
 DEFAULT_RETRY_AFTER = 30.0
 RETRY_AFTER_CAP = 60.0
 BODY_PREFIX_CHARS = 200
+HEADER_VALUE_CHARS = 100
 
 
 def parse_retry_after(
@@ -45,17 +47,32 @@ def parse_retry_after(
     return min(max(seconds, 0.0), cap)
 
 
-def _clean(text: str) -> str:
-    """Replace every control character with a space (keeps messages on one log line)."""
-    return "".join(" " if ord(ch) < 0x20 or ord(ch) == 0x7F else ch for ch in text)
+def sanitize_text(text: str, limit: int) -> str:
+    """Return at most ``limit`` characters of untrusted remote text, safe to store and log.
+
+    Every control, format, surrogate, private-use or unassigned character (Unicode category
+    ``C*``, which includes newlines, ESC, NUL, C1 controls and bidi overrides) and the Unicode
+    line/paragraph separators become a space, so the text stays on one line. HTML or markdown is
+    *not* altered: consumers must render it as plain text.
+    """
+    return "".join(
+        " "
+        if unicodedata.category(ch)[0] == "C" or unicodedata.category(ch) in ("Zl", "Zp")
+        else ch
+        for ch in text[:limit]
+    )
 
 
 def describe(fetch: PageFetch) -> str:
     """Return a one-line diagnostic: status, server, content type, attempts, transport, body."""
     status = fetch.status_code if fetch.status_code is not None else "-"
-    body = _clean(fetch.content.decode("utf-8", errors="replace")[:BODY_PREFIX_CHARS])
+    server = sanitize_text(fetch.server or "", HEADER_VALUE_CHARS) or "-"
+    ctype = sanitize_text(fetch.content_type or "", HEADER_VALUE_CHARS) or "-"
+    body = sanitize_text(
+        fetch.content[: 4 * BODY_PREFIX_CHARS].decode("utf-8", errors="replace"), BODY_PREFIX_CHARS
+    )
     return (
-        f"http={status} server={fetch.server or '-'} ctype={fetch.content_type or '-'} "
+        f"http={status} server={server} ctype={ctype} "
         f"attempts={fetch.attempts} transport={fetch.transport_error or '-'} body={body}"
     )
 

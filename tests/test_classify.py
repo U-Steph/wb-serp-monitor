@@ -6,6 +6,7 @@ import contextlib
 import json
 import os
 import sqlite3
+import unicodedata
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -399,3 +400,64 @@ def test_cli_collect_records_blocked_and_ok_attempts():
         ).fetchall()
         assert obs_queries == [(2,)]
         assert con.execute("SELECT status FROM runs").fetchone()[0] == "partial"
+
+
+# ------------------------------------------------------- IN-07: remote text is sanitised
+
+
+def test_sanitize_text_strips_control_format_and_separator_characters():
+    from wbmon.classify import sanitize_text
+
+    nasty = "a\x1b[31mb‮c d e\x85f​g\x00h\ud800i"
+    cleaned = sanitize_text(nasty, 100)
+    assert cleaned == "a [31mb c d e f g h i"
+    assert (
+        sanitize_text("ТЕСТ ё <b>x</b> [link](http://x)", 100) == "ТЕСТ ё <b>x</b> [link](http://x)"
+    )
+    assert len(sanitize_text("x" * 1000, 50)) == 50
+
+
+def test_describe_caps_and_cleans_header_values():
+    from wbmon.classify import HEADER_VALUE_CHARS, describe
+
+    message = describe(
+        make_fetch(403, "x", ctype="text/html\r\nX-Evil: 1" + "y" * 500, server="wb\x1baas" * 100)
+    )
+    assert all(unicodedata.category(ch)[0] != "C" for ch in message)
+    assert "ctype=text/html  X-Evil: 1" in message
+    server_part = message.split(" server=", 1)[1].split(" ctype=", 1)[0]
+    assert len(server_part) == HEADER_VALUE_CHARS
+
+
+def test_writer_sanitises_and_caps_any_stored_error_message(tmp_path):
+    import contextlib
+
+    from wbmon.models import QueryResult
+    from wbmon.storage.db import connect_rw
+    from wbmon.storage.migrations import init_db
+    from wbmon.storage.writer import ERROR_MESSAGE_MAX_CHARS, Writer
+
+    path = tmp_path / "msg.sqlite3"
+    init_db(path)
+    with contextlib.closing(connect_rw(path)) as con:
+        writer = Writer(con)
+        query_id = writer.upsert_queries(["q"], "2026-10-01T00:00:00Z")["q"]
+        run_id = writer.start_run(
+            trigger="manual",
+            started_at="2026-10-01T00:00:00Z",
+            query_source="bundled",
+            params_json="{}",
+            top_n=5,
+            n_queries=1,
+        )
+        hostile = QueryResult(
+            status="error",
+            started_at="2026-10-01T00:00:00Z",
+            duration_ms=1,
+            error_class="exception",
+            error_message="line1\nline2\x1b[0m" + "z" * 2000,
+        )
+        writer.record_query(run_id, query_id, hostile)
+        (message,) = con.execute("SELECT error_message FROM run_queries").fetchone()
+    assert len(message) == ERROR_MESSAGE_MAX_CHARS
+    assert message.startswith("line1 line2 [0mzzz")
