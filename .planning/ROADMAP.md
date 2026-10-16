@@ -59,7 +59,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 **Wave 1**
 
-- [ ] 01-01-PLAN.md — Walking skeleton: scaffold, frozen schema (migration 1), `wbmon init-db`, thin offline `wbmon collect --limit-queries 1` with DB read-back (wave 1)
+- [x] 01-01-PLAN.md — Walking skeleton: scaffold, frozen schema (migration 1), `wbmon init-db`, thin offline `wbmon collect --limit-queries 1` with DB read-back (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 

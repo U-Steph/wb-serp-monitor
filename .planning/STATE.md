@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Roadmap created; ready for /gsd-plan-phase 1
-last_updated: "2026-10-16T13:38:06.629Z"
-last_activity: 2026-10-16 - Roadmap created (4 phases, 45/45 v1 requirements mapped)
+stopped_at: Completed 01-01-PLAN.md (walking skeleton)
+last_updated: "2026-10-16T13:47:33.654Z"
+last_activity: 2026-10-16 - Completed 01-01 walking skeleton (wbmon init-db + offline collect)
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_plans: 5
+  completed_plans: 1
+  percent: 20
 ---
 
 # Project State
@@ -26,25 +26,25 @@ See: .planning/PROJECT.md (updated 2026-10-16)
 ## Current Position
 
 Phase: 1 of 4 (Collection Core)
-Plan: 0 of TBD in current phase
-Status: Ready to execute
-Last activity: 2026-10-16 - Roadmap created (4 phases, 45/45 v1 requirements mapped)
+Plan: 1 of 5 in current phase (01-01 complete; wave 2 plans 01-02..01-04 next)
+Status: Executing Phase 1
+Last activity: 2026-10-16 - Completed 01-01 walking skeleton (wbmon init-db + offline collect)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██░░░░░░░░] 20%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 0
-- Average duration: - min
-- Total execution time: 0.0 hours
+- Total plans completed: 1
+- Average duration: 30 min
+- Total execution time: 0.5 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 01 | 1 of 5 | 30 min | 30 min |
 
 **Recent Trend:**
 
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: -
 
 *Updated after each plan completion*
+| Phase 01 P01 | 30min | 3 tasks | 27 files |
 
 ## Accumulated Context
 
@@ -64,6 +65,7 @@ Recent decisions affecting current work:
 - [Roadmap]: Phases 2 and 3 depend only on Phase 1 and run in parallel; Phase 4 waits for both and has human checkpoints (hosting, publishing approval, blocked-probe decision, time-spent figure).
 - [Roadmap]: Phase 1 owns the schema freeze (non-backfillable fields) and abandoned-run marking; schema is the contract for Phase 3.
 - [Constraint]: No anti-bot circumvention of any kind; no synthetic observations in a real DB (tests use temp DBs only).
+- [Phase 01]: [Phase 1/01-01]: .gitignore keeps data/ and re-includes src/wbmon/data/; finish_run raises if run not running; orchestrator closes run as error on loop exception
 
 ### Pending Todos
 
@@ -85,6 +87,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-16
-Stopped at: Roadmap created; ready for /gsd-plan-phase 1
+Last session: 2026-10-16T13:47:21.106Z
+Stopped at: Completed 01-01-PLAN.md (walking skeleton)
 Resume file: None

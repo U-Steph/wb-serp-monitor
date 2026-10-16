@@ -11,8 +11,8 @@ Sources: TZ (`TZ_Wildberries_short_2026.pdf`), `.planning/PROJECT.md`, `.plannin
 
 - [ ] **QRY-01**: The collector loads the query list from the Google Sheet «Запросы WB» CSV export (follows redirects, decodes `utf-8-sig`, `csv.reader`, no header row) on every run.
 - [ ] **QRY-02**: Query wording is preserved byte-for-byte end to end (no strip/lowercase/Unicode normalization; `ё`, typos, Cyrillic «х» vs Latin «x» stay distinct) and is passed to WB via httpx `params=` (no manual pre-quoting).
-- [ ] **QRY-03**: A bundled copy of the 70 queries (identical to the PDF appendix and the sheet as of 2026-10-16) is used when the sheet is unreachable or returns an implausible list; the source used (`sheet` / `bundled`) is recorded on the run.
-- [ ] **QRY-04**: Queries are registered in the DB with a stable id and their sheet order; a query that disappears from the sheet keeps its history (never deleted).
+- [x] **QRY-03**: A bundled copy of the 70 queries (identical to the PDF appendix and the sheet as of 2026-10-16) is used when the sheet is unreachable or returns an implausible list; the source used (`sheet` / `bundled`) is recorded on the run.
+- [x] **QRY-04**: Queries are registered in the DB with a stable id and their sheet order; a query that disappears from the sheet keeps its history (never deleted).
 
 ### Collection (COL)
 
@@ -20,12 +20,12 @@ Sources: TZ (`TZ_Wildberries_short_2026.pdf`), `.planning/PROJECT.md`, `.plannin
 - [ ] **COL-02**: It paginates until `top_n` products are collected (default 200, configurable via env/CLI), a page is empty, or a page wrap-around (page N repeats page 1, detected by an id fingerprint) occurs; positions are 1-based across pages in the exact array order (ads included).
 - [ ] **COL-03**: Every HTTP outcome is classified before parsing: `ok`, `blocked` (403, 498, HTML body at 200), `rate_limited` (429, `Retry-After` honoured at most once), `error` (5xx/timeouts after ≤2 bounded retries; schema drift; `products: null`); 200-with-zero-products is recorded as an error, never as "no results".
 - [ ] **COL-04**: A failing query never aborts the run (per-query isolation); a circuit breaker stops sending requests after 3 consecutive `blocked` queries and records the remaining queries as `blocked` (`circuit_open`) without requests.
-- [ ] **COL-05**: The collector never attempts anti-bot circumvention (no TLS impersonation, no stealth/headless browser, no token/cookie harvesting or replay, no CAPTCHA/PoW solving, no proxy rotation) — enforced by dependency list and code review.
+- [x] **COL-05**: The collector never attempts anti-bot circumvention (no TLS impersonation, no stealth/headless browser, no token/cookie harvesting or replay, no CAPTCHA/PoW solving, no proxy rotation) — enforced by dependency list and code review.
 - [ ] **COL-06**: Each (run, query) attempt is logged with status, HTTP status, pages fetched, items collected, completeness (`items == top_n` or end of results), WB-normalized query (`metadata.normquery` when present), error text and duration.
 
 ### Normalized fields (DATA)
 
-- [ ] **DATA-01**: Each observation stores: query id, run id, collection timestamp (UTC), position, `nm_id`.
+- [x] **DATA-01**: Each observation stores: query id, run id, collection timestamp (UTC), position, `nm_id`.
 - [ ] **DATA-02**: Buyer price in rubles = minimum over sizes of `sizes[].price.product / 100`; `basic`, `total`, `logistics` kept as audit columns; NULL (not 0) when no priced size exists.
 - [ ] **DATA-03**: Rating = `reviewRating` (0/missing → NULL); review count = `feedbacks` (missing → NULL); `nmReviewRating`/`nmFeedbacks` stored as extra columns.
 - [ ] **DATA-04**: Delivery: raw `time1`/`time2` (hours) stored; `delivery_days` = calendar-day difference in Europe/Moscow between collection time and collection time + (time1 + time2) hours (today = 0, tomorrow = 1), computed by one pure, unit-tested function so it can be recalibrated; NULL when the inputs are missing.
@@ -35,18 +35,18 @@ Sources: TZ (`TZ_Wildberries_short_2026.pdf`), `.planning/PROJECT.md`, `.plannin
 
 ### Storage (STOR)
 
-- [ ] **STOR-01**: SQLite database (WAL, `busy_timeout`, `foreign_keys=ON`) with tables for queries, runs, run_queries (attempt log), observations; DDL created idempotently by `init-db`.
-- [ ] **STOR-02**: History is append-only: observations are never updated or deleted (DB triggers forbid UPDATE/DELETE); re-running collection only appends; no `INSERT OR REPLACE`.
+- [x] **STOR-01**: SQLite database (WAL, `busy_timeout`, `foreign_keys=ON`) with tables for queries, runs, run_queries (attempt log), observations; DDL created idempotently by `init-db`.
+- [x] **STOR-02**: History is append-only: observations are never updated or deleted (DB triggers forbid UPDATE/DELETE); re-running collection only appends; no `INSERT OR REPLACE`.
 - [ ] **STOR-03**: Each query's observations are written in one transaction together with its run_queries row; a crashed run stays visible (`running` → `abandoned` on next start).
 - [ ] **STOR-04**: Indexes support: list queries; list `nm_id`s ever seen for a query; positions of selected `nm_id`s over time; latest characteristics; run log — each answering in < 1 s on a week of data (~2.4M rows).
 - [ ] **STOR-05**: Read-only access path for the UI (`mode=ro` URI + `query_only`), short-lived connections.
 
 ### Scheduling & operation (SCHED)
 
-- [ ] **SCHED-01**: `wbmon collect` performs one full run (all queries) and exits; usable manually and by the scheduler.
+- [x] **SCHED-01**: `wbmon collect` performs one full run (all queries) and exits; usable manually and by the scheduler.
 - [ ] **SCHED-02**: `wbmon scheduler` triggers a run every hour at :00 Europe/Moscow as a fresh subprocess, runs once at start if the current hourly slot has no run (45-min grace), never back-fills past hours, never overlaps runs (file lock + UNIQUE hourly slot).
 - [ ] **SCHED-03**: The scheduler survives failed runs and restarts (no manual intervention); a heartbeat/latest-run signal is exposed for healthchecks and the UI.
-- [ ] **SCHED-04**: Structured logs for every run and query (stdout), suitable for `docker compose logs`.
+- [x] **SCHED-04**: Structured logs for every run and query (stdout), suitable for `docker compose logs`.
 
 ### Web UI (UI)
 
@@ -68,7 +68,7 @@ Sources: TZ (`TZ_Wildberries_short_2026.pdf`), `.planning/PROJECT.md`, `.plannin
 - [ ] **OPS-01**: One Docker image; `docker compose up -d` starts `init-db` (one-shot), `collector` (scheduler) and `web` (Streamlit) sharing one named volume; `restart: unless-stopped`; healthchecks; log rotation; Europe/Moscow scheduling with UTC storage; `tzdata` installed.
 - [ ] **OPS-02**: The same project runs without Docker (venv + CLI) for local development; documented `.env.example` covers every setting (top_n, dest, delay, DB path, sheet URL, timezone).
 - [ ] **OPS-03**: Deployed on a host where the UI is reachable by a public link; a go/no-go probe (`wbmon probe` / `collect --limit-queries 2`) records whether WB serves plain requests from that host.
-- [ ] **OPS-04**: Test suite (pytest) runs offline with fixtures and temp DBs only (no live WB calls, no synthetic data in the real DB); CI-style command documented.
+- [x] **OPS-04**: Test suite (pytest) runs offline with fixtures and temp DBs only (no live WB calls, no synthetic data in the real DB); CI-style command documented.
 
 ### Deliverables (DOC)
 
@@ -107,30 +107,30 @@ Which phases cover which requirements. Updated during roadmap creation (2026-10-
 |-------------|-------|--------|
 | QRY-01 | Phase 1 | Pending |
 | QRY-02 | Phase 1 | Pending |
-| QRY-03 | Phase 1 | Pending |
-| QRY-04 | Phase 1 | Pending |
+| QRY-03 | Phase 1 | Complete |
+| QRY-04 | Phase 1 | Complete |
 | COL-01 | Phase 1 | Pending |
 | COL-02 | Phase 1 | Pending |
 | COL-03 | Phase 1 | Pending |
 | COL-04 | Phase 1 | Pending |
-| COL-05 | Phase 1 | Pending |
+| COL-05 | Phase 1 | Complete |
 | COL-06 | Phase 1 | Pending |
-| DATA-01 | Phase 1 | Pending |
+| DATA-01 | Phase 1 | Complete |
 | DATA-02 | Phase 1 | Pending |
 | DATA-03 | Phase 1 | Pending |
 | DATA-04 | Phase 1 | Pending |
 | DATA-05 | Phase 1 | Pending |
 | DATA-06 | Phase 1 | Pending |
 | DATA-07 | Phase 1 | Pending |
-| STOR-01 | Phase 1 | Pending |
-| STOR-02 | Phase 1 | Pending |
+| STOR-01 | Phase 1 | Complete |
+| STOR-02 | Phase 1 | Complete |
 | STOR-03 | Phase 1 | Pending |
 | STOR-04 | Phase 1 | Pending |
 | STOR-05 | Phase 3 | Pending |
-| SCHED-01 | Phase 1 | Pending |
+| SCHED-01 | Phase 1 | Complete |
 | SCHED-02 | Phase 2 | Pending |
 | SCHED-03 | Phase 2 | Pending |
-| SCHED-04 | Phase 1 | Pending |
+| SCHED-04 | Phase 1 | Complete |
 | UI-01 | Phase 3 | Pending |
 | UI-02 | Phase 3 | Pending |
 | UI-03 | Phase 3 | Pending |
@@ -146,17 +146,19 @@ Which phases cover which requirements. Updated during roadmap creation (2026-10-
 | OPS-01 | Phase 2 | Pending |
 | OPS-02 | Phase 2 | Pending |
 | OPS-03 | Phase 4 | Pending |
-| OPS-04 | Phase 1 | Pending |
+| OPS-04 | Phase 1 | Complete |
 | DOC-01 | Phase 4 | Pending |
 | DOC-02 | Phase 4 | Pending |
 | DOC-03 | Phase 4 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 45 total
 - Mapped to phases: 45 (Phase 1: 24, Phase 2: 4, Phase 3: 13, Phase 4: 4)
 - Unmapped: 0
 
 **Notes:**
+
 - STOR-03 (abandoned-run marking) is delivered in Phase 1 and exercised by scheduler restarts in Phase 2.
 - UI-01's "public link" clause is delivered by Phase 4 (OPS-03); Phase 3 owns the in-app behaviour.
 - OPS-04 starts in Phase 1 (offline pytest); later phases extend the suite under the same offline rule.
