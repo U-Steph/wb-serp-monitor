@@ -6,6 +6,7 @@ font renders it as a missing glyph, change ``_THOUSANDS`` here and nothing else.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from datetime import datetime
 
@@ -70,6 +71,21 @@ SPINNER = "Загрузка данных…"
 def query_label(sheet_order: int, text: str) -> str:
     """``NN. text`` with the query wording untouched (ё, Cyrillic х and Latin x stay distinct)."""
     return f"{int(sheet_order):02d}. {text}"
+
+
+_ASCII_PUNCTUATION = re.compile(r"([!-/:-@\[-`{-~])")
+_LINE_BREAKS = re.compile(r"[\r\n\t\f\v\u2028\u2029\x85]+")
+
+
+def md_literal(text: object) -> str:
+    """Untrusted text as a Markdown string that renders exactly as typed (UI-2).
+
+    Every ASCII punctuation character is backslash-escaped (CommonMark allows that for all of
+    them), so ``*``, ``_``, ``[``, ``` ` ```, ``<``, ``#``, ``!``, a leading ``01.`` and friends
+    stay literal. Line breaks and tabs become one space so the text cannot open a new block
+    (heading, list, code). The caller still passes it to ``st.caption`` without HTML.
+    """
+    return _ASCII_PUNCTUATION.sub(r"\\\1", _LINE_BREAKS.sub(" ", str(text)))
 
 
 # ------------------------------------------------------------------ tables, CSV and snapshot tab

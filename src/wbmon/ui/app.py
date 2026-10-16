@@ -277,8 +277,9 @@ def render_snapshot_tab(
         st.info(texts.EMPTY_QUERY_NO_DATA)
         return
     query_id = int(query["query_id"])
-    # The sheet text is untrusted: st.text shows it verbatim, st.caption would render Markdown.
-    st.text(texts.query_label(int(query["sheet_order"]), str(query["text"])))
+    # The sheet text is untrusted: md_literal escapes every Markdown special, so st.caption (the
+    # theme's body font, not st.text's monospace) shows it exactly as typed.
+    st.caption(texts.md_literal(texts.query_label(int(query["sheet_order"]), str(query["text"]))))
     runs = data.load_snapshot_runs(path, ver, query_id)
     if runs.empty:
         st.info(texts.SNAPSHOT_EMPTY)

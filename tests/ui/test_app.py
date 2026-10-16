@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 import subprocess
 import sys
 import tomllib
@@ -819,11 +820,48 @@ def test_a_single_run_gives_a_slider_with_one_option(db_path):
     assert len(find_exact_df(at, SNAPSHOT_FRAME_COLUMNS)) == 2
 
 
-def test_snapshot_query_label_is_plain_text_not_markdown(db_path):
+def test_snapshot_query_label_is_an_escaped_caption_not_monospace_text(db_path):
     scenario_mixed(db_path)
     at = run_app()
-    assert [t.value for t in at.text] == [f"01. {Q1}"]
-    assert not has(caption_values(at), f"01. {Q1}")
+    assert not at.text  # st.text would use the monospace face (UI-2)
+    assert texts.md_literal(f"01. {Q1}") in caption_values(at)
+    assert not has(caption_values(at), f"01. {Q1}")  # the raw wording never reaches markdown
+
+
+HOSTILE = (
+    "*bold* _it_ __b__ ~~s~~ [click](https://evil.example/x) ![i](https://evil.example/p.png) "
+    "`code` <b>x</b> <script>1</script> # h :red[c] :material/home: $e=mc^2$ > q - i & &amp; \\ "
+    "1. n | t |"
+)
+
+
+def test_hostile_query_text_reaches_the_snapshot_caption_only_escaped(db_path):
+    started = iso_z(utc_now() - timedelta(minutes=10))
+    build_db(
+        db_path, [RunSpec(started, {HOSTILE: ok_result(started, (A, B))}, n_queries=1)], (HOSTILE,)
+    )
+    at = run_app()
+    assert not at.exception
+    escaped = texts.md_literal(f"01. {HOSTILE}")
+    assert escaped in caption_values(at)
+    # no unescaped copy of any dangerous token in any markdown-rendered element
+    rendered = markdown_values(at) + caption_values(at) + [i.value for i in at.info]
+    for token in ("*bold*", "[click](", "![i]", "<b>", "<script>", "`code`", ":red[", "~~s~~"):
+        assert not has(rendered, token), token
+
+
+def test_md_literal_escapes_every_ascii_punctuation_and_keeps_the_wording():
+    import string
+
+    escaped = texts.md_literal(string.punctuation)
+    assert escaped == "".join("\\" + ch for ch in string.punctuation)
+    # CommonMark: a backslash before ASCII punctuation is dropped, so the text round-trips
+    assert re.sub(r"\\([!-/:-@\[-`{-~])", r"\1", texts.md_literal(HOSTILE)) == HOSTILE
+    assert texts.md_literal("подушка 50x70, ёлка") == "подушка 50x70\\, ёлка"
+
+
+def test_md_literal_flattens_line_breaks_so_text_cannot_open_a_block():
+    assert texts.md_literal("a\n\n# h\n    code\tx") == "a \\# h     code x"
 
 
 def test_zero_runs_snapshot_tab_shows_only_the_info(db_path):
