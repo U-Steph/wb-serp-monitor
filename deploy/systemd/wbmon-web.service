@@ -1,0 +1,39 @@
+# WB SERP Monitor: Streamlit UI without Docker (the same program as the compose `web`).
+#
+# Install: see deploy/systemd/wbmon-scheduler.service and README.md ("Развёртывание на сервере").
+# The working directory must be the repository root: Streamlit reads .streamlit/config.toml from it.
+# The UI opens the database read-only (mode=ro), but it needs the directory of the scheduler's
+# database, hence the same StateDirectory and the same user.
+#
+# By default the unit listens on every interface (a shareable link without a proxy), like the
+# compose default WEB_BIND=0.0.0.0. Behind a reverse proxy bind it to loopback instead:
+#   sudo systemctl edit wbmon-web
+#   [Service]
+#   ExecStart=
+#   ExecStart=/opt/wb-serp-monitor/.venv/bin/streamlit run /opt/wb-serp-monitor/src/wbmon/ui/app.py --server.address=127.0.0.1 --server.port=8501 --server.headless=true --browser.gatherUsageStats=false
+[Unit]
+Description=WB SERP Monitor: Streamlit web UI
+After=network.target
+
+[Service]
+Type=simple
+User=wbserp
+Group=wbserp
+WorkingDirectory=/opt/wb-serp-monitor
+Environment=WBMON_DB_PATH=/var/lib/wbmon/wbmon.sqlite3
+Environment=TZ=Europe/Moscow
+Environment=HOME=/var/lib/wbmon
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/wb-serp-monitor/.venv/bin/streamlit run /opt/wb-serp-monitor/src/wbmon/ui/app.py --server.address=0.0.0.0 --server.port=8501 --server.headless=true --browser.gatherUsageStats=false
+Restart=always
+RestartSec=5
+StateDirectory=wbmon
+StateDirectoryMode=0750
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
