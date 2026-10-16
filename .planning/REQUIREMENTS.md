@@ -39,7 +39,7 @@ Sources: TZ (`TZ_Wildberries_short_2026.pdf`), `.planning/PROJECT.md`, `.plannin
 - [x] **STOR-02**: History is append-only: observations are never updated or deleted (DB triggers forbid UPDATE/DELETE); re-running collection only appends; no `INSERT OR REPLACE`.
 - [x] **STOR-03**: Each query's observations are written in one transaction together with its run_queries row; a crashed run stays visible (`running` → `abandoned` on next start).
 - [x] **STOR-04**: Indexes support: list queries; list `nm_id`s ever seen for a query; positions of selected `nm_id`s over time; latest characteristics; run log — each answering in < 1 s on a week of data (~2.4M rows).
-- [ ] **STOR-05**: Read-only access path for the UI (`mode=ro` URI + `query_only`), short-lived connections.
+- [x] **STOR-05**: Read-only access path for the UI (`mode=ro` URI + `query_only`), short-lived connections.
 
 ### Scheduling & operation (SCHED)
 
@@ -50,18 +50,18 @@ Sources: TZ (`TZ_Wildberries_short_2026.pdf`), `.planning/PROJECT.md`, `.plannin
 
 ### Web UI (UI)
 
-- [ ] **UI-01**: Streamlit app (Russian UI) reachable by a public link; opens read-only on the shared DB; renders correctly with zero, one, or many runs and with all-blocked runs (clear empty/blocked states).
-- [ ] **UI-02**: Header shows data freshness («Последний успешный сбор: … МСК, N мин назад») and a banner when the latest run was blocked/partial; sidebar shows totals (runs, successful runs, first collection, observations, distinct products).
-- [ ] **UI-03**: User selects a search query from the list of all 70 queries (original wording, sheet order).
-- [ ] **UI-04**: User selects one or more `nm_id`s ever found for that query (searchable labels `nm_id · brand · name`), defaulting to the current top-5 of the latest successful run; selection resets sensibly when the query changes.
-- [ ] **UI-05**: Interactive Plotly chart of position over time for the selected products: position 1 at the top (reversed Y), Moscow time on X, hover shows date/time, `nm_id`, position (plus price), `lines+markers`, legend per product.
-- [ ] **UI-06**: Honest gaps: the chart is built on the full grid of runs for the query; a product absent from a complete run gets a gap (`None`), never an invented value; runs where the query was blocked/partial/error are visually marked (grey band or marker) and do not count as "absent".
-- [ ] **UI-07**: Table of collected characteristics for the selected products: latest position, price, rating, reviews, delivery days, seller, ad flag, last-seen time, best/worst position, WB product link; plus a full observation history table for the selection.
-- [ ] **UI-08**: CSV export of the shown history (Excel-friendly `utf-8-sig`).
-- [ ] **UI-09**: Time-range filter for the chart/table (default: all collected history).
-- [ ] **UI-10**: «Журнал сборов» tab: run history (start МСК, duration, status, ok/partial/blocked/error counts, products stored) and a query × run status heatmap.
-- [ ] **UI-11**: «Выдача» tab: full top-N snapshot of one query at a chosen run (position, ad flag, nm_id link, name, brand, price, rating, reviews, delivery days, seller).
-- [ ] **UI-12**: Cached reads keyed on the latest run id (fresh data appears after each run without restart); the app stays responsive on a week of data.
+- [x] **UI-01**: Streamlit app (Russian UI) reachable by a public link; opens read-only on the shared DB; renders correctly with zero, one, or many runs and with all-blocked runs (clear empty/blocked states).
+- [x] **UI-02**: Header shows data freshness («Последний успешный сбор: … МСК, N мин назад») and a banner when the latest run was blocked/partial; sidebar shows totals (runs, successful runs, first collection, observations, distinct products).
+- [x] **UI-03**: User selects a search query from the list of all 70 queries (original wording, sheet order).
+- [x] **UI-04**: User selects one or more `nm_id`s ever found for that query (searchable labels `nm_id · brand · name`), defaulting to the current top-5 of the latest successful run; selection resets sensibly when the query changes.
+- [x] **UI-05**: Interactive Plotly chart of position over time for the selected products: position 1 at the top (reversed Y), Moscow time on X, hover shows date/time, `nm_id`, position (plus price), `lines+markers`, legend per product.
+- [x] **UI-06**: Honest gaps: the chart is built on the full grid of runs for the query; a product absent from a complete run gets a gap (`None`), never an invented value; runs where the query was blocked/partial/error are visually marked (grey band or marker) and do not count as "absent".
+- [x] **UI-07**: Table of collected characteristics for the selected products: latest position, price, rating, reviews, delivery days, seller, ad flag, last-seen time, best/worst position, WB product link; plus a full observation history table for the selection.
+- [x] **UI-08**: CSV export of the shown history (Excel-friendly `utf-8-sig`).
+- [x] **UI-09**: Time-range filter for the chart/table (default: all collected history).
+- [x] **UI-10**: «Журнал сборов» tab: run history (start МСК, duration, status, ok/partial/blocked/error counts, products stored) and a query × run status heatmap.
+- [x] **UI-11**: «Выдача» tab: full top-N snapshot of one query at a chosen run (position, ad flag, nm_id link, name, brand, price, rating, reviews, delivery days, seller).
+- [x] **UI-12**: Cached reads keyed on the latest run id (fresh data appears after each run without restart); the app stays responsive on a week of data.
 
 ### Deployment (OPS)
 
@@ -126,23 +126,23 @@ Which phases cover which requirements. Updated during roadmap creation (2026-10-
 | STOR-02 | Phase 1 | Complete |
 | STOR-03 | Phase 1 | Complete |
 | STOR-04 | Phase 1 | Complete |
-| STOR-05 | Phase 3 | Pending |
+| STOR-05 | Phase 3 | Complete |
 | SCHED-01 | Phase 1 | Complete |
 | SCHED-02 | Phase 2 | Complete |
 | SCHED-03 | Phase 2 | Complete |
 | SCHED-04 | Phase 1 | Complete |
-| UI-01 | Phase 3 | Pending |
-| UI-02 | Phase 3 | Pending |
-| UI-03 | Phase 3 | Pending |
-| UI-04 | Phase 3 | Pending |
-| UI-05 | Phase 3 | Pending |
-| UI-06 | Phase 3 | Pending |
-| UI-07 | Phase 3 | Pending |
-| UI-08 | Phase 3 | Pending |
-| UI-09 | Phase 3 | Pending |
-| UI-10 | Phase 3 | Pending |
-| UI-11 | Phase 3 | Pending |
-| UI-12 | Phase 3 | Pending |
+| UI-01 | Phase 3 | Complete |
+| UI-02 | Phase 3 | Complete |
+| UI-03 | Phase 3 | Complete |
+| UI-04 | Phase 3 | Complete |
+| UI-05 | Phase 3 | Complete |
+| UI-06 | Phase 3 | Complete |
+| UI-07 | Phase 3 | Complete |
+| UI-08 | Phase 3 | Complete |
+| UI-09 | Phase 3 | Complete |
+| UI-10 | Phase 3 | Complete |
+| UI-11 | Phase 3 | Complete |
+| UI-12 | Phase 3 | Complete |
 | OPS-01 | Phase 2 | Complete |
 | OPS-02 | Phase 2 | Complete |
 | OPS-03 | Phase 4 | Pending |
