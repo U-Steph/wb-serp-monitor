@@ -19,11 +19,8 @@ x-logging: &default-logging
     max-file: "3"
 
 x-wbmon: &wbmon
-  build:
-    context: .
-    args:
-      PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim}
-      PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+  # Only init-db carries `build:`; collector and web reuse the same image tag and start after init-db
+  # (depends_on), so one `up --build` builds the image once instead of once per service.
   image: wb-serp-monitor:local
   # Optional .env: the long syntax with `required: false` needs Docker Compose >= 2.24 (older versions
   # fail to parse it). Without any .env the built-in defaults apply.
@@ -47,6 +44,12 @@ x-wbmon: &wbmon
 services:
   init-db:
     <<: *wbmon
+    build:
+      context: .
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim}
+        # Build-time only, but recorded in `docker history`: use a mirror URL WITHOUT credentials.
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
     command: ["wbmon", "init-db"]
     restart: "no"
 

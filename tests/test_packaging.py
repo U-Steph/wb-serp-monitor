@@ -239,7 +239,6 @@ def test_compose_top_level(compose):
 @pytest.mark.parametrize("role", ROLES)
 def test_role_shares_image_volume_environment_and_log_rotation(compose, role):
     service = compose["services"][role]
-    assert service["build"]["context"] == "."
     assert service["image"] == "wb-serp-monitor:local"
     assert "wbdata:/data" in service["volumes"]  # read-write: WAL readers must create -shm
     assert not any(str(v).endswith(":ro") for v in service["volumes"])
@@ -267,8 +266,19 @@ def test_only_caddy_gets_a_capability_back_and_only_the_bind_one(compose):
         assert "cap_add" not in compose["services"][name]
 
 
+def test_only_init_db_builds_the_shared_image(compose):
+    """IN-01: one build definition; the other roles reuse the tag and wait for init-db."""
+    services = compose["services"]
+    assert services["init-db"]["build"]["context"] == "."
+    for name in ("collector", "web"):
+        assert "build" not in services[name], name
+        assert services[name]["image"] == services["init-db"]["image"]
+        assert "init-db" in services[name]["depends_on"]
+    assert "build" not in services["caddy"]
+
+
 def test_build_args_default_to_the_pinned_image_and_pypi(compose):
-    args = compose["services"]["collector"]["build"]["args"]
+    args = compose["services"]["init-db"]["build"]["args"]
     assert resolve(args["PYTHON_IMAGE"]) == "python:3.12-slim"
     assert resolve(args["PIP_INDEX_URL"]) == "https://pypi.org/simple"
 
