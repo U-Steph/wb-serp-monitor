@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import replace
 
 from wbmon.models import OBSERVATION_COLUMNS, QueryResult
 
@@ -41,6 +42,24 @@ SELECT COUNT(*),
        COALESCE(SUM(items_collected), 0)
 FROM run_queries WHERE run_id = ?
 """
+
+
+def enforce_result_invariants(result: QueryResult) -> QueryResult:
+    """Return ``result``, or an honest ``error`` result if it claims ``ok`` without observations.
+
+    That combination is a collector bug, not a database problem: the CHECK constraint would
+    reject it and the failure would be mislabelled ``db_write_failed``. No new error class is
+    introduced; the existing ``exception`` class carries the explanation.
+    """
+    if result.status == "ok" and not result.observations:
+        return replace(
+            result,
+            status="error",
+            error_class="exception",
+            is_complete=False,
+            error_message="collector invariant violated: ok result without observations",
+        )
+    return result
 
 
 class Writer:
@@ -113,6 +132,7 @@ class Writer:
         """
         if result.observations and result.status not in ("ok", "partial"):
             raise ValueError(f"status {result.status!r} cannot carry observations")
+        result = enforce_result_invariants(result)
         params = {
             "run_id": run_id,
             "query_id": query_id,
@@ -156,12 +176,21 @@ class Writer:
 
     @staticmethod
     def _derive_status(
-        total: int, n_ok: int, n_partial: int, n_blocked: int, error: str | None
+        total: int,
+        n_ok: int,
+        n_partial: int,
+        n_blocked: int,
+        error: str | None,
+        missing: int = 0,
     ) -> str:
-        """Run status from its recorded queries (research A12)."""
+        """Run status from its recorded queries (research A12).
+
+        ``missing`` counts planned queries that left no row at all (their write failed); such a
+        run can never be ``ok``.
+        """
         if error is not None or total == 0:
             return "error"
-        if n_ok == total:
+        if n_ok == total and missing == 0:
             return "ok"
         if n_ok + n_partial > 0:
             return "partial"
@@ -178,7 +207,9 @@ class Writer:
             total, n_ok, n_partial, n_blocked, n_error, n_items = con.execute(
                 _AGGREGATE_SQL, (run_id,)
             ).fetchone()
-            status = self._derive_status(total, n_ok, n_partial, n_blocked, error)
+            planned = con.execute("SELECT n_queries FROM runs WHERE id = ?", (run_id,)).fetchone()
+            missing = max(0, (planned[0] if planned else 0) - total)
+            status = self._derive_status(total, n_ok, n_partial, n_blocked, error, missing)
             cursor = con.execute(
                 "UPDATE runs SET status = ?, finished_at = ?, n_ok = ?, n_partial = ?,"
                 " n_blocked = ?, n_error = ?, n_items = ?, error = ?"

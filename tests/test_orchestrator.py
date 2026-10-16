@@ -517,3 +517,55 @@ def test_out_of_range_number_in_a_payload_does_not_cost_the_query_or_the_run():
         "SELECT feedbacks FROM observations WHERE query_id = ? AND position = 3",
         stored[0]["query_id"],
     ) == [{"feedbacks": None}]
+
+
+# ------------------------------------------------------------ WR-05: a dead write path
+
+
+def _fail_record_query(monkeypatch, failing_queries: set[int]):
+    """Make ``Writer.record_query`` raise (fallback included) for the n-th calls in the set."""
+    from wbmon.storage.writer import Writer
+
+    original = Writer.record_query
+    calls = {"n": 0}
+
+    def record_query(self, run_id, query_id, result):
+        calls["n"] += 1
+        if calls["n"] in failing_queries:
+            raise sqlite3.OperationalError("database is locked")
+        return original(self, run_id, query_id, result)
+
+    monkeypatch.setattr(Writer, "record_query", record_query)
+
+
+def test_one_unwritable_query_is_logged_and_the_run_continues(monkeypatch, capsys):
+    qs = bundled()[:3]
+    _fail_record_query(monkeypatch, {2})
+    fake = FakeWB(script_ok(qs))
+
+    run_id, _ = run(fake, limit_queries=3)
+
+    stored = query_rows(run_id)
+    assert [r["text"] for r in stored] == [qs[0], qs[2]]  # the second left no row at all
+    assert run_row(run_id)["status"] == "partial"
+    out = capsys.readouterr().out
+    (failed,) = events(out, "query_write_failed")
+    assert "level=ERROR" in failed and "database is locked" in failed
+    done = events(out, "query_done")
+    assert len(done) == 3 and "error_class=db_write_failed" in done[1]
+
+
+def test_a_dead_write_path_stops_the_run_and_marks_it_error(monkeypatch, capsys):
+    from wbmon.orchestrator import MAX_CONSECUTIVE_WRITE_FAILURES
+
+    qs = bundled()[:6]
+    _fail_record_query(monkeypatch, set(range(1, 100)))
+    fake = FakeWB(script_ok(qs))
+
+    with pytest.raises(sqlite3.OperationalError):
+        run(fake, limit_queries=6)
+
+    (only,) = rows("SELECT * FROM runs")
+    assert only["status"] == "error" and "database is locked" in only["error"]
+    assert len(fake.wb_requests()) == MAX_CONSECUTIVE_WRITE_FAILURES  # no hammering afterwards
+    assert len(events(capsys.readouterr().out, "query_write_failed")) == 3

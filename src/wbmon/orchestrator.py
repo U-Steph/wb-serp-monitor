@@ -28,10 +28,11 @@ from wbmon.storage.db import connect_rw
 from wbmon.storage.lock import LockBusy, run_lock
 from wbmon.storage.migrations import init_db
 from wbmon.storage.reader import run_id_for_slot, run_summary
-from wbmon.storage.writer import Writer
+from wbmon.storage.writer import Writer, enforce_result_invariants
 from wbmon.wb_client import WbClient, make_http_client
 
 BREAKER_THRESHOLD = 3
+MAX_CONSECUTIVE_WRITE_FAILURES = 3  # a single failed write is isolated; a dead database is not
 _EXCEPTION_MESSAGE_LIMIT = 200
 _RUN_ERROR_LIMIT = 500
 _REFUSED = frozenset({"blocked", "rate_limited"})
@@ -182,6 +183,7 @@ def _run_queries(
         consecutive = 0
         breaker_open = False
         deadline_logged = False
+        consecutive_write_failures = 0
         for text in texts:
             collected = False
             if monotonic() >= deadline_at:
@@ -224,6 +226,7 @@ def _run_queries(
                         error_class="exception",
                         error_message=f"{type(exc).__name__}: {exc}"[:_EXCEPTION_MESSAGE_LIMIT],
                     )
+            result = enforce_result_invariants(result)
             if collected:
                 consecutive = consecutive + 1 if result.status in _REFUSED else 0
                 if consecutive >= BREAKER_THRESHOLD and not breaker_open:
@@ -235,8 +238,28 @@ def _run_queries(
                         after=text,
                         consecutive=consecutive,
                     )
-            stored = writer.record_query(run_id, query_ids[text], result)
-            failed_write = stored != result.status
+            write_error: Exception | None = None
+            try:
+                stored = writer.record_query(run_id, query_ids[text], result)
+            except Exception as exc:  # even the db_write_failed fallback row could not be written
+                write_error = exc
+                stored = "error"
+            if write_error is None:
+                consecutive_write_failures = 0
+            else:
+                consecutive_write_failures += 1
+                log_event(
+                    "query_write_failed",
+                    level=logging.ERROR,
+                    run_id=run_id,
+                    query=text,
+                    error=f"{type(write_error).__name__}: {write_error}"[:_EXCEPTION_MESSAGE_LIMIT],
+                    consecutive=consecutive_write_failures,
+                )
+                if consecutive_write_failures >= MAX_CONSECUTIVE_WRITE_FAILURES:
+                    # the database itself is unusable (locked, full, I/O error): stop the run
+                    raise write_error
+            failed_write = write_error is not None or stored != result.status
             log_event(
                 "query_done",
                 run_id=run_id,

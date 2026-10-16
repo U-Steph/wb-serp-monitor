@@ -373,3 +373,17 @@ def test_unbindable_value_falls_back_to_db_write_failed_row(con, writer, bad_val
     assert con.execute(
         "SELECT status, error_class, items_collected FROM run_queries"
     ).fetchall() == [("error", "db_write_failed", 0)]
+
+
+def test_ok_without_observations_is_recorded_as_the_collector_bug_it_is(con, writer):
+    """WR-05: not mislabelled db_write_failed, and no new error class."""
+    query_id = writer.upsert_queries(["alpha"], T0)["alpha"]
+    run_id = new_run(writer)
+
+    stored = writer.record_query(run_id, query_id, result("ok", observations=()))
+
+    assert stored == "error"
+    row = con.execute("SELECT status, error_class, error_message, items_collected FROM run_queries")
+    assert row.fetchall() == [
+        ("error", "exception", "collector invariant violated: ok result without observations", 0)
+    ]
