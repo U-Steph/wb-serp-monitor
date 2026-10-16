@@ -90,6 +90,7 @@ class FakeChild:
         rc: int = 0,
         *,
         ignore_term: bool = False,
+        ignore_kill: bool = False,
         term_rc: int = 0,
         pid: int = 5000,
     ) -> None:
@@ -97,6 +98,7 @@ class FakeChild:
         self.runtime_s = runtime_s
         self.rc = rc
         self.ignore_term = ignore_term
+        self.ignore_kill = ignore_kill
         self.term_rc = term_rc
         self.pid = pid
         self.started = clock_.mono
@@ -114,7 +116,7 @@ class FakeChild:
     def poll(self) -> int | None:
         if self._result is not None:
             return self._result
-        if "kill" in self.signals:
+        if "kill" in self.signals and not self.ignore_kill:
             return self._done(-9)
         if "term" in self.signals and not self.ignore_term:
             return self._done(self.term_rc)
@@ -444,6 +446,111 @@ def test_stop_with_a_graceful_child_sends_only_term(tmp_path):
     assert h.sched.run_forever() == 0
     assert h.spawns[0].child.signals == ["term"]
     assert len(h.spawns) == 1
+
+
+def test_stop_arriving_after_the_slot_check_spawns_no_child(tmp_path, capsys):
+    holder: list[Harness] = []
+
+    def has_run(_slot: str) -> bool:  # runs inside _handle_slot, right before run_slot
+        holder[0].sched.stop.request(signal.SIGTERM)
+        return False
+
+    h = build(tmp_path, "2026-10-16T09:10:00Z", "2026-10-16T09:50:00Z", has_run=has_run)
+    holder.append(h)
+
+    assert h.sched.run_forever() == 0
+
+    assert h.attempts == []
+    assert h.spawns == []
+    assert [e["reason"] for e in events(capsys.readouterr().out, "run_skipped")] == ["shutdown"]
+
+
+def raise_in_beat(sched: Scheduler) -> None:
+    """Make the first unforced heartbeat fail (an unexpected exception in the poll loop)."""
+    real = sched.beat
+    failed: list[bool] = []
+
+    def beat(*, force: bool = False) -> None:
+        if not force and not failed:
+            failed.append(True)
+            raise RuntimeError("boom (test)")
+        real(force=force)
+
+    sched.beat = beat  # type: ignore[method-assign]
+
+
+def test_an_unexpected_exception_in_the_poll_loop_terminates_the_child(tmp_path, capsys):
+    h = build(
+        tmp_path,
+        "2026-10-16T09:10:00Z",
+        "2026-10-16T09:30:00Z",
+        child=lambda _i, _slot: {"runtime_s": INF},
+    )
+    raise_in_beat(h.sched)
+
+    assert h.sched.run_forever() == 0
+
+    assert h.spawns[0].child.signals == ["term"]  # reaped, not left running untracked
+    assert h.spawns[0].child.poll() is not None
+    failed = events(capsys.readouterr().out, "run_failed")
+    assert [f["reason"] for f in failed] == ["exception"]
+
+
+def test_an_orphan_child_that_ignores_sigterm_is_killed_after_an_exception(tmp_path):
+    h = build(
+        tmp_path,
+        "2026-10-16T09:10:00Z",
+        "2026-10-16T09:30:00Z",
+        child=lambda _i, _slot: {"runtime_s": INF, "ignore_term": True},
+    )
+    raise_in_beat(h.sched)
+
+    h.sched.run_forever()
+
+    child = h.spawns[0].child
+    assert child.signals == ["term", "kill"]
+    assert child.signal_at["kill"] - child.signal_at["term"] >= h.sched.reap_wait_s
+
+
+def test_a_child_that_survives_sigkill_is_given_up_on_and_the_loop_carries_on(tmp_path, capsys):
+    h = build(
+        tmp_path,
+        "2026-10-16T09:00:00Z",
+        "2026-10-16T11:30:00Z",
+        child_timeout_s=600.0,
+        child=lambda i, _slot: (
+            {"runtime_s": INF, "ignore_term": True, "ignore_kill": True}
+            if i == 0
+            else {"runtime_s": 60}
+        ),
+    )
+
+    assert h.sched.run_forever() == 0
+
+    out = capsys.readouterr().out
+    stuck = h.spawns[0].child
+    assert stuck.signals == ["term", "kill"]
+    assert stuck.signal_at["term"] - 0 >= 600  # timeout, then term_grace_s, then kill_wait_s
+    assert len(events(out, "child_unkillable")) == 1
+    assert [f["reason"] for f in events(out, "run_failed")] == ["child_unkillable"]
+    assert len(h.spawns) >= 2  # the 10:00 slot still ran
+
+
+def test_stop_with_an_unkillable_child_still_ends_after_the_bounded_wait(tmp_path, capsys):
+    h = build(
+        tmp_path,
+        "2026-10-16T09:00:00Z",
+        "2026-10-16T09:05:00Z",
+        child=lambda _i, _slot: {"runtime_s": INF, "ignore_term": True, "ignore_kill": True},
+    )
+
+    assert h.sched.run_forever() == 0
+
+    out = capsys.readouterr().out
+    assert len(events(out, "child_unkillable")) == 1
+    assert len(events(out, "shutdown")) == 1
+    waited = (h.clock.t - at("2026-10-16T09:05:00Z")).total_seconds()
+    assert waited <= h.sched.stop_grace_s + h.sched.kill_wait_s + 5 * h.sched.tick_s
 
 
 def test_stop_while_idle_ends_the_loop_within_two_ticks(tmp_path, capsys):

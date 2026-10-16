@@ -53,6 +53,8 @@ CHILD_TERM_GRACE_S = 30.0
 #     compose stop_grace_period  >  STOP_GRACE_S  >  MAX_ATTEMPT_SECONDS + finish margin.
 STOP_FINISH_MARGIN_S = 20.0
 STOP_GRACE_S = MAX_ATTEMPT_SECONDS + STOP_FINISH_MARGIN_S
+CHILD_KILL_WAIT_S = 30.0  # how long a SIGKILLed child may stay alive before it is given up on
+CHILD_REAP_WAIT_S = 5.0  # how long an orphaned child gets to exit after an unexpected exception
 CHILD_TIMEOUT_MARGIN_S = 600.0
 _LATE_START_LOG_S = 60
 
@@ -115,6 +117,8 @@ class Scheduler:
     heartbeat_every_s: float = HEARTBEAT_EVERY_S
     term_grace_s: float = CHILD_TERM_GRACE_S
     stop_grace_s: float = STOP_GRACE_S
+    kill_wait_s: float = CHILD_KILL_WAIT_S
+    reap_wait_s: float = CHILD_REAP_WAIT_S
     last_slot: str | None = None
     last_exit: int | None = None
     _last_beat: float = field(default=float("-inf"), init=False, repr=False)
@@ -145,6 +149,9 @@ class Scheduler:
 
     def run_slot(self, slot: str) -> None:
         """Run one child to completion, keeping the heartbeat alive; never raises for a child."""
+        if self.stop.requested:  # a stop that arrived after the loop check: do not spawn a child
+            log_event("run_skipped", slot=slot, reason="shutdown")
+            return
         started = self.monotonic()
         try:
             child = self.spawn(slot)
@@ -159,27 +166,17 @@ class Scheduler:
             )
             return
         log_event("run_started", slot=slot, pid=child.pid)
-        reason: str | None = None
-        term_at: float | None = None
-        killed = False
-        while (rc := child.poll()) is None:
-            mono = self.monotonic()
-            if term_at is None:
-                if self.stop.requested:
-                    reason = "shutdown"
-                elif mono - started > self.child_timeout_s:
-                    reason = "timeout"
-                if reason is not None:
-                    child.terminate()
-                    term_at = mono
-            elif not killed:
-                grace = self.stop_grace_s if reason == "shutdown" else self.term_grace_s
-                if mono - term_at >= grace:
-                    child.kill()
-                    killed = True
-            self.beat()
-            self.sleep(self.tick_s)
+        try:
+            rc, reason = self._supervise(child, slot, started)
+        except BaseException:
+            # The child runs in its own session, so nothing else would ever stop it.
+            self._reap(child)
+            raise
         self.last_slot, self.last_exit = slot, rc
+        if rc is None:  # SIGKILLed but never exited: given up on, the loop carries on
+            log_event("run_failed", level=logging.ERROR, slot=slot, reason="child_unkillable")
+            self.beat(force=True)
+            return
         log_event(
             "run_finished",
             slot=slot,
@@ -192,6 +189,60 @@ class Scheduler:
             failure = "shutdown" if reason == "shutdown" else "exit_code"
             log_event("run_failed", level=logging.ERROR, slot=slot, exit=rc, reason=failure)
         self.beat(force=True)
+
+    def _supervise(self, child: Child, slot: str, started: float) -> tuple[int | None, str | None]:
+        """Poll ``child`` until it exits; returns ``(exit code, reason)``.
+
+        The exit code is ``None`` only when the child survived SIGKILL for ``kill_wait_s``
+        (``child_unkillable`` is logged): an unkillable process (uninterruptible I/O) must not
+        freeze the scheduler or keep a fresh heartbeat on a loop that runs nothing.
+        """
+        reason: str | None = None
+        term_at: float | None = None
+        kill_at: float | None = None
+        while (rc := child.poll()) is None:
+            mono = self.monotonic()
+            if term_at is None:
+                if self.stop.requested:
+                    reason = "shutdown"
+                elif mono - started > self.child_timeout_s:
+                    reason = "timeout"
+                if reason is not None:
+                    child.terminate()
+                    term_at = mono
+            elif kill_at is None:
+                grace = self.stop_grace_s if reason == "shutdown" else self.term_grace_s
+                if mono - term_at >= grace:
+                    child.kill()
+                    kill_at = mono
+            elif mono - kill_at >= self.kill_wait_s:
+                log_event(
+                    "child_unkillable",
+                    level=logging.ERROR,
+                    slot=slot,
+                    pid=child.pid,
+                    waited_s=round(mono - kill_at, 1),
+                )
+                return None, reason
+            self.beat()
+            self.sleep(self.tick_s)
+        return rc, reason
+
+    def _reap(self, child: Child) -> None:
+        """Best effort after an unexpected exception: SIGTERM, then SIGKILL, bounded waits."""
+        with contextlib.suppress(Exception):
+            child.terminate()
+            if not self._exited_within(child, self.reap_wait_s):
+                child.kill()
+                self._exited_within(child, self.reap_wait_s)
+
+    def _exited_within(self, child: Child, seconds: float) -> bool:
+        deadline = self.monotonic() + seconds
+        while child.poll() is None:
+            if self.monotonic() >= deadline:
+                return False
+            self.sleep(min(0.1, self.tick_s))
+        return True
 
     def run_forever(self) -> int:
         """Loop until a stop is requested; returns the process exit code (always 0)."""
