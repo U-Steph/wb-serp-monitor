@@ -25,7 +25,7 @@ x-wbmon: &wbmon
       PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
   image: wb-serp-monitor:local
   # Optional .env: the long syntax with `required: false` needs Docker Compose >= 2.24 (older versions
-  # fail to parse it). `make up` creates .env from .env.example anyway.
+  # fail to parse it). Without any .env the built-in defaults apply.
   env_file:
     - path: .env
       required: false

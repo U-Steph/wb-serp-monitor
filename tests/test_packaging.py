@@ -427,11 +427,10 @@ def test_makefile_local_targets():
 
 
 def test_makefile_docker_targets():
-    assert _recipe("up") == [
-        "@test -f .env || cp .env.example .env",
-        "docker compose up -d --build",
-    ]
-    assert "docker compose up -d --no-build" in _recipe("up-prebuilt")
+    # .env is optional: it is only seeded from .env.example when that file exists
+    seed = "@if [ -f .env.example ] && [ ! -f .env ]; then cp .env.example .env; fi"
+    assert _recipe("up") == [seed, "docker compose up -d --build"]
+    assert _recipe("up-prebuilt") == [seed, "docker compose up -d --no-build"]
     assert _recipe("down") == ["docker compose down"]  # never -v: the history lives in the volume
     (logs,) = _recipe("logs")
     assert logs.startswith("docker compose logs -f") and logs.endswith("collector web")
@@ -474,3 +473,25 @@ def test_make_dry_runs_print_the_docker_commands_and_create_nothing():
     assert "docker compose down" in down.stdout
     assert "-v" not in down.stdout and "--volumes" not in down.stdout
     assert (REPO_ROOT / ".env").exists() == had_env
+
+
+# ---------------------------------------------------------------------------------------------
+# The stack runs with no env file at all
+# ---------------------------------------------------------------------------------------------
+
+
+def test_every_setting_has_a_default_so_the_stack_runs_without_an_env_file():
+    from wbmon.config import Settings
+
+    config_text = (REPO_ROOT / "src" / "wbmon" / "config.py").read_text(encoding="utf-8")
+    names = set(re.findall(r"WBMON_[A-Z_]+", config_text))
+    with_default = set(re.findall(r'get\("(WBMON_[A-Z_]+)",', config_text))
+    assert len(names) >= 10
+    assert names == with_default, names ^ with_default
+    Settings.from_env({})  # every WBMON_* setting falls back to a valid default
+
+    compose_text = COMPOSE.read_text(encoding="utf-8")
+    interpolated = re.findall(r"\$\{([A-Za-z_][A-Za-z0-9_]*)([^}]*)\}", compose_text)
+    assert {name for name, _ in interpolated} >= {"WEB_PORT", "WEB_BIND", "SITE_ADDRESS"}
+    for name, rest in interpolated:
+        assert rest.startswith(":-"), f"compose variable {name} has no default"

@@ -2,8 +2,9 @@
 #
 # Local path, in order:   make install  ->  make init-db  ->  make scheduler (or make collect-once)  ->  make web
 #   - collect-once and scheduler send REAL requests to Wildberries and Google Sheets.
-#   - settings come from .env (copy .env.example); it is loaded into the environment of each recipe.
-# Docker path:            make up   (`make down` keeps the data volume; never run `docker compose down -v`)
+#   - settings come from an optional .env (WBMON_* variables); it is loaded into the environment of each recipe.
+# Docker path:            make up   (works without any .env file: compose has built-in defaults;
+#                                    `make down` keeps the data volume; never run `docker compose down -v`)
 #
 # Compatible with GNU Make 3.81 and bash 3.2 (the macOS defaults): no .ONESHELL, no bash-4 features.
 SHELL := /bin/bash
@@ -41,11 +42,11 @@ web:  ## Streamlit UI on http://localhost:8501
 	@$(ENVLOAD) $(VENV)/bin/streamlit run src/wbmon/ui/app.py
 
 up:  ## build and start the whole stack
-	@test -f .env || cp .env.example .env
+	@if [ -f .env.example ] && [ ! -f .env ]; then cp .env.example .env; fi
 	docker compose up -d --build
 
 up-prebuilt:  ## start the stack from an image loaded with `docker load` (no build)
-	@test -f .env || cp .env.example .env
+	@if [ -f .env.example ] && [ ! -f .env ]; then cp .env.example .env; fi
 	docker compose up -d --no-build
 
 down:  ## stop the stack, KEEP the data volume (never add the volumes flag)
