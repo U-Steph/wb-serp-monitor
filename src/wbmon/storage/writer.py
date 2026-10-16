@@ -29,6 +29,9 @@ INSERT INTO run_queries (
 )
 """
 
+ABANDONED_ERROR = "process died before finishing"
+_ERROR_MESSAGE_LIMIT = 200
+
 _AGGREGATE_SQL = """
 SELECT COUNT(*),
        COALESCE(SUM(status = 'ok'), 0),
@@ -100,7 +103,13 @@ class Writer:
         return cursor.lastrowid
 
     def record_query(self, run_id: int, query_id: int, result: QueryResult) -> str:
-        """Write the ``run_queries`` row and its observations in one transaction."""
+        """Write the ``run_queries`` row and its observations in one transaction.
+
+        Returns the stored status. If the transaction fails (any ``sqlite3.Error``) nothing of
+        this query is kept; a separate ``error`` / ``db_write_failed`` row records the attempt
+        and ``"error"`` is returned. If that fallback row cannot be written either (for example
+        the (run, query) pair already exists) the exception propagates.
+        """
         if result.observations and result.status not in ("ok", "partial"):
             raise ValueError(f"status {result.status!r} cannot carry observations")
         params = {
@@ -119,31 +128,56 @@ class Writer:
             "started_at": result.started_at,
             "duration_ms": result.duration_ms,
         }
-        with self._transaction() as con:
-            con.execute(_INSERT_RUN_QUERY_SQL, params)
-            if result.observations:
-                con.executemany(
-                    INSERT_OBSERVATION_SQL,
-                    [row.as_params(run_id, query_id) for row in result.observations],
-                )
+        try:
+            with self._transaction() as con:
+                con.execute(_INSERT_RUN_QUERY_SQL, params)
+                if result.observations:
+                    con.executemany(
+                        INSERT_OBSERVATION_SQL,
+                        [row.as_params(run_id, query_id) for row in result.observations],
+                    )
+        except sqlite3.Error as exc:
+            # _transaction has rolled back: no partial rows. Keep the failure visible.
+            failure = {
+                **params,
+                "status": "error",
+                "error_class": "db_write_failed",
+                "items_collected": 0,
+                "is_complete": 0,
+                "ad_slot_mismatch": 0,
+                "duplicates_dropped": 0,
+                "error_message": f"{type(exc).__name__}: {exc}"[:_ERROR_MESSAGE_LIMIT],
+            }
+            with self._transaction() as con:
+                con.execute(_INSERT_RUN_QUERY_SQL, failure)
+            return "error"
         return result.status
 
+    @staticmethod
+    def _derive_status(
+        total: int, n_ok: int, n_partial: int, n_blocked: int, error: str | None
+    ) -> str:
+        """Run status from its recorded queries (research A12)."""
+        if error is not None or total == 0:
+            return "error"
+        if n_ok == total:
+            return "ok"
+        if n_ok + n_partial > 0:
+            return "partial"
+        if n_blocked > 0:
+            return "blocked"
+        return "error"
+
     def finish_run(self, run_id: int, finished_at: str, *, error: str | None = None) -> str:
-        """Aggregate the run's query results, derive its status and close it."""
+        """Aggregate the run's query results, derive its status and close it.
+
+        Raises ``RuntimeError`` when the run is not (or no longer) ``running``.
+        """
         with self._transaction() as con:
             total, n_ok, n_partial, n_blocked, n_error, n_items = con.execute(
                 _AGGREGATE_SQL, (run_id,)
             ).fetchone()
-            if error is not None or total == 0:
-                status = "error"
-            elif n_ok == total:
-                status = "ok"
-            elif n_ok + n_partial > 0:
-                status = "partial"
-            elif n_blocked > 0:
-                status = "blocked"
-            else:
-                status = "error"
+            status = self._derive_status(total, n_ok, n_partial, n_blocked, error)
             cursor = con.execute(
                 "UPDATE runs SET status = ?, finished_at = ?, n_ok = ?, n_partial = ?,"
                 " n_blocked = ?, n_error = ?, n_items = ?, error = ?"
@@ -151,5 +185,25 @@ class Writer:
                 (status, finished_at, n_ok, n_partial, n_blocked, n_error, n_items, error, run_id),
             )
             if cursor.rowcount != 1:
-                raise RuntimeError(f"run {run_id} is not in the running state")
+                raise RuntimeError(f"run {run_id} is not running")
         return status
+
+    def abandon_stale_runs(self, now: str) -> int:
+        """Turn every ``running`` run into ``abandoned`` and return how many there were.
+
+        Counters are aggregated from the queries that were recorded before the process died.
+        Only safe while the caller holds ``storage.lock.run_lock`` (no live run can exist then).
+        """
+        with self._transaction() as con:
+            stale = [row[0] for row in con.execute("SELECT id FROM runs WHERE status = 'running'")]
+            for run_id in stale:
+                _total, n_ok, n_partial, n_blocked, n_error, n_items = con.execute(
+                    _AGGREGATE_SQL, (run_id,)
+                ).fetchone()
+                con.execute(
+                    "UPDATE runs SET status = 'abandoned', finished_at = ?, error = ?,"
+                    " n_ok = ?, n_partial = ?, n_blocked = ?, n_error = ?, n_items = ?"
+                    " WHERE id = ? AND status = 'running'",
+                    (now, ABANDONED_ERROR, n_ok, n_partial, n_blocked, n_error, n_items, run_id),
+                )
+        return len(stale)
