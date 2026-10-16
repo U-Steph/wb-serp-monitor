@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-03-PLAN.md (durable append-only storage, run lock, STOR-04 readers)
-last_updated: "2026-10-16T13:59:23.746Z"
-last_activity: 2026-10-16 - Completed 01-03 durable append-only storage
+stopped_at: Completed 01-04-PLAN.md (honest WB access: classifier, polite client, sheet source, probe)
+last_updated: "2026-10-16T14:05:09.045Z"
+last_activity: 2026-10-16 - Completed 01-04 honest WB access
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 5
-  completed_plans: 3
-  percent: 60
+  completed_plans: 4
+  percent: 80
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-16)
 ## Current Position
 
 Phase: 1 of 4 (Collection Core)
-Plan: 3 of 5 in current phase (01-01, 01-02 and 01-03 complete; 01-04 next, then 01-05)
+Plan: 4 of 5 in current phase (01-01..01-04 complete; 01-05 next)
 Status: Executing Phase 1
 Last activity: 2026-10-16 - Completed 01-03 durable append-only storage
 
-Progress: [██████░░░░] 60%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
@@ -55,6 +55,7 @@ Progress: [██████░░░░] 60%
 | Phase 01 P01 | 30min | 3 tasks | 27 files |
 | Phase 01 P02 | 25min | 2 tasks | 11 files |
 | Phase 01 P03 | 25min | 3 tasks | 7 files |
+| Phase 01 P04 | 25min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,8 @@ Recent decisions affecting current work:
 - [Constraint]: No anti-bot circumvention of any kind; no synthetic observations in a real DB (tests use temp DBs only).
 - [Phase 01]: [Phase 1/01-01]: .gitignore keeps data/ and re-includes src/wbmon/data/; finish_run raises if run not running; orchestrator closes run as error on loop exception
 - [Phase 01]: [Phase 1/01-03]: latest_characteristics picks one row per nm_id by id (collected_at DESC, id DESC); record_query falls back to an error/db_write_failed row after rollback; run_lock is a non-blocking flock on {db_path}.lock
+- [Phase 01-04]: PageFetch.elapsed_ms/received_at describe the final attempt; attempts counts requests per page
+- [Phase 01-04]: Retry-After 0 honoured as 0 s; sheet rows de-duplicated before the 50..500 plausibility count
 
 ### Pending Todos
 
@@ -90,6 +93,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-16T13:59:19.648Z
-Stopped at: Completed 01-01-PLAN.md (walking skeleton)
+Last session: 2026-10-16T14:05:02.956Z
+Stopped at: Completed 01-04-PLAN.md (honest WB access: classifier, polite client, sheet source, probe)
 Resume file: None
