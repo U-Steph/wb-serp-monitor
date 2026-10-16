@@ -135,7 +135,13 @@ def banner(
     following = next_attempt(now)
     if status == "running":
         started = to_msk_one(str(latest_run["started_at"]))
-        return "info", texts.BANNER_RUNNING.format(hm=texts.fmt_hm(started))  # type: ignore[arg-type]
+        # Same 60-minute rule as heartbeat_line: an older "running" row is a dead collector.
+        if _young_running(latest_run, now):
+            return "info", texts.BANNER_RUNNING.format(hm=texts.fmt_hm(started))  # type: ignore[arg-type]
+        return "warning", texts.BANNER_RUNNING_STALE.format(
+            hm=texts.fmt_hm(started),  # type: ignore[arg-type]
+            next_attempt=following,
+        )
     if status == "partial":
         return "warning", texts.BANNER_PARTIAL.format(
             ok=_int(latest_run.get("n_ok")),

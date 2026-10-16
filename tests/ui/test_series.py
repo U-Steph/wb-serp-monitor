@@ -199,6 +199,24 @@ def test_banner_running():
     assert text == "⏳ Идёт сбор (начат 14:50 МСК). Данные появятся после завершения."
 
 
+def test_banner_running_older_than_an_hour_is_not_called_live():
+    """WR-01: a dead collector leaves the row 'running'; the banner must not say 'Идёт сбор'."""
+    run = run_row("running", started=ago(minutes=70))
+    kind, text = series.banner(run, 4, None, NOW)
+    assert kind == "warning"
+    assert "Идёт сбор" not in text
+    assert text.startswith("⏸ Последний сбор начат 13:50 МСК и не завершился")
+    assert text.endswith("Следующая попытка в 16:00 МСК.")
+    # consistent with the collector line: no "live" claim there either
+    assert series.heartbeat_line(None, NOW, run).startswith("⚪")
+
+
+def test_banner_running_just_under_an_hour_is_still_live():
+    kind, text = series.banner(run_row("running", started=ago(minutes=59)), 4, None, NOW)
+    assert kind == "info"
+    assert text.startswith("⏳ Идёт сбор")
+
+
 def test_banner_ok_is_silent():
     assert series.banner(run_row("ok", ok=3), 5, None, NOW) is None
 
