@@ -87,6 +87,8 @@ class Pager:
             return "wrap"
         page_ids = [i for i in (_item_id(item) for item in products) if i is not None]
         if page_ids and all(i in self._seen for i in page_ids):
+            # WB serves already-seen products only once it has run out of new ones (the results
+            # wrapped around), so this is the end of the results, i.e. a complete query.
             return "wrap_subset"
         return None
 
