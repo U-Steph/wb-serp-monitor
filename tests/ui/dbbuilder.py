@@ -5,7 +5,8 @@ Synthetic rows may exist ONLY in temporary databases: every entry point calls
 path inside the repository. Rows go in through the real Phase 1 ``Writer`` (the same code path as
 the collector), so statuses, counters and constraints are the production ones.
 
-Runnable as a script: ``python tests/ui/dbbuilder.py --scenario {mixed,all_blocked} PATH``.
+Runnable as a script:
+``python tests/ui/dbbuilder.py --scenario {mixed,all_blocked,visual_check} PATH``.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from pathlib import Path
 
 from wbmon.clock import floor_hour, iso_z, parse_iso_z, utc_now
 from wbmon.models import ObservationRow, QueryResult
+from wbmon.queries import load_bundled
 from wbmon.storage.db import connect_rw
 from wbmon.storage.migrations import init_db
 from wbmon.storage.writer import Writer
@@ -333,16 +335,146 @@ def scenario_latest(path: str | Path, final: str) -> Built:
     return build_db(path, [*_mixed_specs(now), r7], abandon_at=abandon_at)
 
 
+VISUAL_POOL = 60  # synthetic products per query
+VISUAL_RUN_S = 70 * QUERY_STEP_S + 30  # a full run lasts about 24 minutes
+
+
+def _visual_pool(query_index: int) -> list[int]:
+    return [900000000 + query_index * 100 + p for p in range(VISUAL_POOL)]
+
+
+def _visual_order(query_index: int, run_index: int) -> list[int]:
+    """Pool indices in position order for one run: stable leaders, a fringe that moves."""
+
+    def score(p: int) -> int:
+        return p * 10 + ((p * 37 + run_index * 53 + query_index * 11) % 301) - 150
+
+    return sorted(range(VISUAL_POOL), key=score)
+
+
+def _visual_ok(
+    started: str, query_index: int, run_index: int, top_n: int, *, partial: bool = False
+) -> QueryResult:
+    """A synthetic result: rotating brands and sellers, every 17th price and 11th slot special."""
+    depth = 15 if partial else top_n
+    pool = _visual_pool(query_index)
+    rows = []
+    for position, p in enumerate(_visual_order(query_index, run_index)[:depth], start=1):
+        nm_id = pool[p]
+        rows.append(
+            obs_row(
+                position,
+                nm_id,
+                started,
+                name=f"ТЕСТ товар {nm_id}",
+                brand=f"ТЕСТ-БРЕНД {p % 7 + 1}",
+                seller_name=f"ТЕСТ-Продавец {p % 9 + 1}",
+                price_rub=None if p % 17 == 16 else 900.0 + 13 * p + position,
+                is_promoted=1 if position % 11 == 0 else 0,
+            )
+        )
+    return QueryResult(
+        status="partial" if partial else "ok",
+        started_at=started,
+        duration_ms=900,
+        observations=tuple(rows),
+        error_class="http_5xx" if partial else None,
+        http_status=503 if partial else None,
+        pages_fetched=1 if partial else 2,
+        is_complete=not partial,
+    )
+
+
+def _visual_results(
+    run_number: int, started: str, queries: Sequence[str], top_n: int
+) -> dict[str, QueryResult]:
+    """The attempts of scheduler run ``run_number`` (1-based) in the visual-check history."""
+    results: dict[str, QueryResult] = {}
+    for index, text in enumerate(queries, start=1):
+        if run_number == 5:
+            results[text] = failed_result(started)
+        elif 20 <= run_number <= 22:
+            # the circuit breaker opens after three blocked queries; the rest are not even tried
+            results[text] = (
+                failed_result(started)
+                if index <= 3
+                else failed_result(started, http_status=None, error_class="circuit_open")
+            )
+        elif run_number == 30 and 11 <= index <= 20:
+            results[text] = _visual_ok(started, index, run_number, top_n, partial=True)
+        elif run_number == 40 and index > 10:
+            continue  # the process died after ten queries (run abandoned below)
+        else:
+            results[text] = _visual_ok(started, index, run_number, top_n)
+    return results
+
+
+def scenario_visual_check(path: str | Path, n_runs: int = 48, top_n: int = 30) -> Built:
+    """The history for the end-of-phase visual check: all 70 real query texts, synthetic products.
+
+    ``n_runs`` hourly scheduler runs end ten minutes ago. Run 5 is blocked for every query, runs
+    20-22 are blocked by the circuit breaker, run 30 is partial for queries 11-20, run 40 was
+    abandoned after ten queries, and one limited manual run (two queries) sits between runs 34
+    and 35. Everything else is ok and complete. Every product is named «ТЕСТ ...».
+    """
+    target = assert_temporary(path)
+    if target.exists():
+        raise FileExistsError(str(target))
+    queries = load_bundled()
+    init_db(target)
+    built = Built()
+    base = utc_now() - timedelta(minutes=10)
+    with contextlib.closing(connect_rw(target)) as con:
+        writer = Writer(con)
+        built.query_ids = writer.upsert_queries(list(queries), iso_z(utc_now()))
+        for number in range(1, n_runs + 1):
+            start = base - timedelta(hours=n_runs - number)
+            started = iso_z(start)
+            abandoned = number == 40
+            spec = RunSpec(
+                started_at=started,
+                results=_visual_results(number, started, queries, top_n),
+                finish=not abandoned,
+                top_n=top_n,
+                n_queries=len(queries),
+                duration_s=VISUAL_RUN_S,
+            )
+            built.run_ids.append(_write_run(writer, spec, queries, built.query_ids))
+            built.started.append(started)
+            if abandoned:
+                writer.abandon_stale_runs(iso_z(start + timedelta(minutes=25)))
+            if number == 34:
+                manual_at = iso_z(start + timedelta(minutes=30))
+                manual = RunSpec(
+                    started_at=manual_at,
+                    results={
+                        text: _visual_ok(manual_at, i, 34, top_n)
+                        for i, text in enumerate(queries[:2], start=1)
+                    },
+                    trigger="manual",
+                    top_n=top_n,
+                    n_queries=2,
+                    duration_s=60,
+                )
+                built.run_ids.append(_write_run(writer, manual, queries, built.query_ids))
+                built.started.append(manual_at)
+    return built
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """CLI: build a scenario database at PATH (temporary locations only)."""
     parser = argparse.ArgumentParser(description="Build a synthetic scenario DB (temp only).")
-    parser.add_argument("--scenario", choices=("mixed", "all_blocked"), required=True)
+    parser.add_argument(
+        "--scenario", choices=("mixed", "all_blocked", "visual_check"), required=True
+    )
     parser.add_argument("path")
     args = parser.parse_args(argv)
     if args.scenario == "mixed":
         scenario_mixed(args.path)
-    else:
+    elif args.scenario == "all_blocked":
         scenario_all_blocked(args.path)
+    else:
+        scenario_visual_check(args.path)
     print(args.path)
     return 0
 

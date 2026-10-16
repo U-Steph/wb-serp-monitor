@@ -24,6 +24,7 @@ from ui.dbbuilder import (
     scenario_all_blocked,
     scenario_latest,
     scenario_mixed,
+    scenario_visual_check,
 )
 from wbmon.storage.db import connect_ro
 
@@ -149,3 +150,97 @@ def test_cli_refuses_repository_path_and_creates_nothing(tmp_path):
     )
     assert proc.returncode != 0
     assert not (REPO_ROOT / "data").exists()
+
+
+# ------------------------------------------------------------------------- visual check
+
+
+@pytest.fixture(scope="module")
+def visual(tmp_path_factory):
+    path = tmp_path_factory.mktemp("visual") / "visual.sqlite3"
+    return path, scenario_visual_check(path)
+
+
+def test_visual_check_has_the_documented_runs(visual):
+    path, built = visual
+    assert len(built.query_ids) == 70
+    assert len(built.run_ids) == 49  # 48 hourly runs plus the limited manual run
+    statuses = dict(rows(path, "SELECT id, status FROM runs"))
+    scheduler = [r for r in built.run_ids if r != built.run_ids[34]]
+    by_number = {n: statuses[r] for n, r in enumerate(scheduler, start=1)}
+    assert by_number[5] == "blocked"
+    assert by_number[20] == by_number[21] == by_number[22] == "blocked"
+    assert by_number[30] == "partial"
+    assert by_number[40] == "abandoned"
+    assert all(by_number[n] == "ok" for n in (1, 4, 6, 19, 23, 29, 31, 39, 41, 48))
+    manual = rows(
+        path, "SELECT trigger, n_queries, slot_utc FROM runs WHERE id = ?", (built.run_ids[34],)
+    )
+    assert manual == [("manual", 2, None)]
+    assert built.started[34] > built.started[33] and built.started[34] < built.started[35]
+
+
+def test_visual_check_attempts_follow_the_script(visual):
+    path, built = visual
+    scheduler = [r for r in built.run_ids if r != built.run_ids[34]]
+    r5, r20, r30, r40 = scheduler[4], scheduler[19], scheduler[29], scheduler[39]
+    assert rows(
+        path, "SELECT DISTINCT status, http_status FROM run_queries WHERE run_id = ?", (r5,)
+    ) == [("blocked", 403)]
+    circuit = rows(
+        path,
+        "SELECT COUNT(*) FROM run_queries WHERE run_id = ? AND error_class = 'circuit_open'"
+        " AND http_status IS NULL",
+        (r20,),
+    )
+    assert circuit == [(67,)]
+    partial = rows(
+        path,
+        "SELECT COUNT(*), MIN(items_collected), MAX(items_collected), MIN(is_complete)"
+        " FROM run_queries WHERE run_id = ? AND status = 'partial'",
+        (r30,),
+    )
+    assert partial == [(10, 15, 15, 0)]
+    assert rows(path, "SELECT COUNT(*) FROM run_queries WHERE run_id = ?", (r40,)) == [(10,)]
+    assert rows(
+        path, "SELECT COUNT(*) FROM run_queries WHERE run_id = ?", (built.run_ids[34],)
+    ) == [(2,)]
+
+
+def test_visual_check_products_are_synthetic_and_move(visual):
+    path, built = visual
+    assert rows(path, "SELECT COUNT(*) FROM observations WHERE name NOT LIKE 'ТЕСТ%'") == [(0,)]
+    assert rows(
+        path, "SELECT MIN(nm_id) >= 900000000, MAX(nm_id) < 900010000 FROM observations"
+    ) == [(1, 1)]
+    assert rows(path, "SELECT COUNT(*) FROM observations WHERE price_rub IS NULL")[0][0] > 0
+    assert rows(path, "SELECT COUNT(*) FROM observations WHERE is_promoted = 1")[0][0] > 0
+    q1 = built.query_ids[next(iter(built.query_ids))]
+    spread = rows(
+        path,
+        "SELECT COUNT(DISTINCT nm_id) FROM observations WHERE query_id = ?",
+        (q1,),
+    )[0][0]
+    assert 30 < spread <= 60  # products enter and leave the top-30 between runs
+    brands = {b for (b,) in rows(path, "SELECT DISTINCT brand FROM observations")}
+    assert brands == {f"ТЕСТ-БРЕНД {i}" for i in range(1, 8)}
+
+
+def test_visual_check_cli_refuses_the_repository_and_creates_nothing(tmp_path):
+    target = REPO_ROOT / "x.sqlite3"
+    proc = subprocess.run(
+        [sys.executable, str(Path(dbbuilder.__file__)), "--scenario", "visual_check", str(target)],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        check=False,
+    )
+    assert proc.returncode != 0
+    assert not target.exists()
+
+
+def test_visual_check_refuses_to_overwrite(tmp_path):
+    path = tmp_path / "exists.sqlite3"
+    path.write_bytes(b"")
+    with pytest.raises(FileExistsError):
+        scenario_visual_check(path)
