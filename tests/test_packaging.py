@@ -162,6 +162,39 @@ def test_dockerignore_is_an_allowlist():
         assert pattern in rules
 
 
+def _dockerignore_excludes(path: str) -> bool:
+    """Evaluate the rules like Docker: in order, a rule matching the path or a parent directory
+    sets the verdict (``!`` re-includes), the last such rule wins."""
+
+    def matches(pattern: str, candidate: str) -> bool:
+        regex = re.escape(pattern).replace(r"\*\*/", "(?:.*/)?").replace(r"\*", "[^/]*")
+        return re.fullmatch(regex, candidate) is not None
+
+    parts = path.split("/")
+    candidates = ["/".join(parts[: i + 1]) for i in range(len(parts))]
+    excluded = False
+    for rule in _ignore_rules():
+        negated = rule.startswith("!")
+        pattern = rule[1:] if negated else rule
+        if any(matches(pattern, candidate) for candidate in candidates):
+            excluded = not negated
+    return excluded
+
+
+def test_dockerignore_keeps_streamlit_config_but_never_secrets():
+    assert _dockerignore_excludes(".streamlit/config.toml") is False
+    assert _dockerignore_excludes(".streamlit/secrets.toml") is True
+    # evaluator sanity: the allowlist still excludes unlisted paths and includes the package
+    assert _dockerignore_excludes(".env") is True
+    assert _dockerignore_excludes("tests/test_packaging.py") is True
+    assert _dockerignore_excludes("src/wbmon/__init__.py") is False
+    assert _dockerignore_excludes("src/wbmon/__pycache__/x.pyc") is True
+
+
+def test_pip_index_url_visibility_is_documented_in_the_dockerfile():
+    assert "docker history" in DOCKERFILE.read_text(encoding="utf-8")
+
+
 def test_dockerignore_never_reincludes_secrets_or_junk():
     reincluded = {r[1:] for r in _ignore_rules() if r.startswith("!")}
     for name in (".venv", ".git", ".planning", "data", "tests", ".env"):

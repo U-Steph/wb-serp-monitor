@@ -4,6 +4,8 @@
 !pyproject.toml
 !src
 !.streamlit
+# `!.streamlit` re-includes the whole directory; keep only config.toml, never a secrets file.
+.streamlit/secrets.toml
 # Never ship caches or databases, even from inside allowed directories.
 **/__pycache__
 **/*.pyc

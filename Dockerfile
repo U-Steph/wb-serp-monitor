@@ -21,6 +21,7 @@ WORKDIR /app
 COPY . /app
 
 # Mirror hook for hosts that cannot reach pypi.org (pip reads PIP_INDEX_URL from the environment).
+# A build ARG is visible in `docker history`: pass a mirror URL WITHOUT credentials.
 ARG PIP_INDEX_URL=https://pypi.org/simple
 # The smoke checks fail the build, not the 3 a.m. run, when package data or tz data is missing.
 RUN pip install --no-cache-dir ".[web]" \
