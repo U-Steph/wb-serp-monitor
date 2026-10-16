@@ -13,8 +13,12 @@
 SHELL := /bin/bash
 VENV  ?= .venv
 PY    := $(VENV)/bin/python
-# Load .env into the environment of one recipe line (values must be shell-safe: see .env.example).
-ENVLOAD := set -a; [ -f .env ] && . ./.env; set +a;
+# Load .env into the environment of one recipe line. The file is in docker-compose format but is
+# SOURCED by bash here, so a value containing shell metacharacters (space, ; & ( ) $ ` # < > | or
+# quotes) MUST be single-quoted, e.g. WBMON_USER_AGENT='Mozilla/5.0 (compatible; wbmon/0.1)'.
+# A missing .env is fine (built-in defaults); a .env that bash cannot source fails the recipe
+# instead of starting wbmon with a half-loaded environment. Note that sourcing executes the file.
+ENVLOAD := set -a; if [ -f .env ]; then . ./.env || exit 1; fi; set +a;
 
 .DEFAULT_GOAL := help
 .PHONY: help install test lint init-db collect-once scheduler web up up-tls up-prebuilt down logs ps

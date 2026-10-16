@@ -463,6 +463,43 @@ def test_makefile_docker_targets():
     assert _recipe("ps") == ["docker compose ps"]
 
 
+def _envload() -> str:
+    match = re.search(r"^ENVLOAD := (.+)$", MAKEFILE.read_text(encoding="utf-8"), re.MULTILINE)
+    assert match, "Makefile defines no ENVLOAD"
+    return match.group(1)
+
+
+def test_envload_is_guarded_by_file_existence_and_fails_on_a_bad_env_file():
+    envload = _envload()
+    assert "set -a;" in envload and "set +a;" in envload
+    assert "if [ -f .env ]; then . ./.env || exit 1; fi" in envload
+    assert "single-quoted" in MAKEFILE.read_text(encoding="utf-8")  # the documented rule
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash is not installed")
+def test_envload_behaviour_missing_good_and_broken_env_file(tmp_path):
+    def run(script: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["bash", "-c", f"{_envload()} {script}"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+    missing = run("echo ran:${WBMON_X-unset}")
+    assert (missing.returncode, missing.stdout.strip()) == (0, "ran:unset")
+
+    (tmp_path / ".env").write_text("WBMON_X='a (b); c'\n", encoding="utf-8")
+    good = run("echo ran:$WBMON_X")
+    assert (good.returncode, good.stdout.strip()) == (0, "ran:a (b); c")
+
+    (tmp_path / ".env").write_text("WBMON_X=Mozilla/5.0 (compatible; x)\n", encoding="utf-8")
+    broken = run("echo ran:$WBMON_X")
+    assert broken.returncode != 0
+    assert "ran:" not in broken.stdout  # the command after ENVLOAD never starts
+
+
 def test_makefile_has_no_confirm_guard_and_no_recursive_or_forced_recipes():
     text = MAKEFILE.read_text(encoding="utf-8")
     assert "CONFIRM" not in text  # D2-A5: a human tool, live collection is its purpose
