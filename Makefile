@@ -5,6 +5,9 @@
 #   - settings come from an optional .env (WBMON_* variables); it is loaded into the environment of each recipe.
 # Docker path:            make up   (works without any .env file: compose has built-in defaults;
 #                                    `make down` keeps the data volume; never run `docker compose down -v`)
+#   - `make up` publishes Streamlit on ALL interfaces (WEB_BIND=0.0.0.0, a public link without Caddy).
+#   - `make up-tls` adds the Caddy TLS proxy (set SITE_ADDRESS in .env) and binds Streamlit to
+#     127.0.0.1, so the plain-HTTP port 8501 is not reachable next to the TLS endpoint.
 #
 # Compatible with GNU Make 3.81 and bash 3.2 (the macOS defaults): no .ONESHELL, no bash-4 features.
 SHELL := /bin/bash
@@ -14,7 +17,7 @@ PY    := $(VENV)/bin/python
 ENVLOAD := set -a; [ -f .env ] && . ./.env; set +a;
 
 .DEFAULT_GOAL := help
-.PHONY: help install test lint init-db collect-once scheduler web up up-prebuilt down logs ps
+.PHONY: help install test lint init-db collect-once scheduler web up up-tls up-prebuilt down logs ps
 
 help:  ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/'
@@ -44,6 +47,10 @@ web:  ## Streamlit UI on http://localhost:8501
 up:  ## build and start the whole stack
 	@if [ -f .env.example ] && [ ! -f .env ]; then cp .env.example .env; fi
 	docker compose up -d --build
+
+up-tls:  ## build and start the stack WITH the Caddy TLS proxy; Streamlit is then bound to 127.0.0.1 only
+	@if [ -f .env.example ] && [ ! -f .env ]; then cp .env.example .env; fi
+	COMPOSE_PROFILES=tls WEB_BIND=127.0.0.1 docker compose up -d --build
 
 up-prebuilt:  ## start the stack from an image loaded with `docker load` (no build)
 	@if [ -f .env.example ] && [ ! -f .env ]; then cp .env.example .env; fi

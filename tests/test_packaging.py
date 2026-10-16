@@ -299,6 +299,27 @@ def test_web_runs_streamlit_from_the_app_workdir(compose):
     assert service["ports"] == ["${WEB_BIND:-0.0.0.0}:${WEB_PORT:-8501}:8501"]
 
 
+def test_the_public_web_port_is_documented_and_make_up_tls_closes_it():
+    """WR-02: the default stays public (D2-A3); the TLS path is one command and loudly commented."""
+    text = COMPOSE.read_text(encoding="utf-8")
+    ports_at = text.index('"${WEB_BIND:-0.0.0.0}:${WEB_PORT:-8501}:8501"')
+    comment = text[max(0, ports_at - 700) : ports_at]
+    assert "PUBLIC BY DEFAULT" in comment
+    assert "WEB_BIND=127.0.0.1" in comment and "make up-tls" in comment
+    up_tls = _recipe("up-tls")
+    assert any(
+        line.startswith("COMPOSE_PROFILES=tls WEB_BIND=127.0.0.1 docker compose up")
+        for line in up_tls
+    )
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make is not installed")
+def test_make_up_tls_dry_run_binds_streamlit_to_loopback():
+    result = _make("-n", "up-tls")
+    assert result.returncode == 0, result.stderr
+    assert "COMPOSE_PROFILES=tls WEB_BIND=127.0.0.1 docker compose up -d --build" in result.stdout
+
+
 def test_web_healthcheck_probes_streamlit_on_loopback_without_running_it(compose):
     health = compose["services"]["web"]["healthcheck"]
     assert health["test"][:3] == ["CMD", "python", "-c"]
@@ -372,6 +393,7 @@ TARGETS = (
     "scheduler",
     "web",
     "up",
+    "up-tls",
     "up-prebuilt",
     "down",
     "logs",
@@ -430,6 +452,10 @@ def test_makefile_docker_targets():
     # .env is optional: it is only seeded from .env.example when that file exists
     seed = "@if [ -f .env.example ] && [ ! -f .env ]; then cp .env.example .env; fi"
     assert _recipe("up") == [seed, "docker compose up -d --build"]
+    assert _recipe("up-tls") == [
+        seed,
+        "COMPOSE_PROFILES=tls WEB_BIND=127.0.0.1 docker compose up -d --build",
+    ]
     assert _recipe("up-prebuilt") == [seed, "docker compose up -d --no-build"]
     assert _recipe("down") == ["docker compose down"]  # never -v: the history lives in the volume
     (logs,) = _recipe("logs")

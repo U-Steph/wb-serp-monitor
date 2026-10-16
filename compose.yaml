@@ -1,9 +1,10 @@
 # WB SERP Monitor - one `docker compose up -d` starts init-db, collector and web on one named volume.
 #
 #   docker compose up -d --build            init-db (one-shot), collector (hourly scheduler), web (Streamlit)
-#   docker compose --profile tls up -d      the same plus the Caddy TLS reverse proxy
-#                                           (or COMPOSE_PROFILES=tls in .env; set SITE_ADDRESS, and
-#                                           WEB_BIND=127.0.0.1 so Streamlit is not exposed next to Caddy)
+#   make up-tls                             the same plus the Caddy TLS reverse proxy: runs compose with
+#                                           COMPOSE_PROFILES=tls and WEB_BIND=127.0.0.1 (set SITE_ADDRESS in .env).
+#                                           Enabling the profile any other way (--profile tls, COMPOSE_PROFILES in
+#                                           .env) leaves Streamlit public on 8501 unless WEB_BIND=127.0.0.1 is set too.
 #
 # NEVER run `docker compose down -v`: it deletes the volume wbmon_data, i.e. the whole history.
 # `docker compose down` (what `make down` runs) keeps the volume.
@@ -78,7 +79,10 @@ services:
     depends_on:
       init-db:
         condition: service_completed_successfully
-    # Public by default (a shareable link); set WEB_BIND=127.0.0.1 when the tls profile (Caddy) fronts it.
+    # !! PUBLIC BY DEFAULT: WEB_BIND=0.0.0.0 publishes the unauthenticated Streamlit on every interface (decision
+    # D2-A3: a shareable link without Caddy). Docker bypasses ufw/firewalld, so a host firewall does not help.
+    # With the tls profile (Caddy) you MUST set WEB_BIND=127.0.0.1 or the plain-HTTP port stays open next to
+    # the TLS endpoint. `make up-tls` sets both for you.
     ports:
       - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-8501}:8501"
     healthcheck:
