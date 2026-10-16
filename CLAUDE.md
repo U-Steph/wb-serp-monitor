@@ -38,6 +38,22 @@ product was not found — never invented positions).
   README and write-up in Russian (the employer is Russian-speaking), code identifiers in English.
 <!-- GSD:project-end -->
 
+## Orchestrator Decisions — these OVERRIDE the stack research text below
+
+- **Scheduler:** `wbmon scheduler` is a small Python loop (sleep until next :00 Europe/Moscow → run
+  `python -m wbmon collect` as a fresh subprocess; file lock + UNIQUE hourly slot; 45-min catch-up for
+  the current slot only; never back-fill). supercronic / systemd timer / APScheduler are documented
+  alternatives only — do not add them.
+- **HTTP identity:** honest bot-style `User-Agent: Mozilla/5.0 (compatible; wbmon/<version>; +<repo url>)`,
+  `Accept: application/json`, `Accept-Language: ru-RU,ru;q=0.9`. No browser-UA disguise, no
+  Origin/Referer spoofing, no cookies, no proxies.
+- **Pacing:** fixed polite delay between sequential requests (`WBMON_REQUEST_DELAY`, default 1.5 s) — no
+  random jitter.
+- **Circuit breaker:** 3 consecutive `blocked` queries → remaining queries recorded as `blocked`
+  (`circuit_open`) without requests.
+- **Config:** frozen dataclass from `WBMON_*` env vars — no pydantic / pydantic-settings dependency.
+- **Phase decisions** live in `.planning/phases/*/NN-CONTEXT.md` and win over this file on conflict.
+
 <!-- GSD:stack-start source:research/STACK.md -->
 
 ## Technology Stack
