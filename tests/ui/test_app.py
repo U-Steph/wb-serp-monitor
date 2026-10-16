@@ -164,7 +164,7 @@ def test_mixed_history_run_table_is_newest_first(db_path):
     scenario_mixed(db_path)
     at = run_app()
     assert not at.exception
-    frame = find_df(at, "Статус")
+    frame = find_df(at, "Тип")
     assert len(frame) == 6
     assert list(frame["Статус"]) == [
         "✅ Успешно",
@@ -190,7 +190,7 @@ def test_all_blocked_history_is_complete_and_informative(db_path):
     captions = caption_values(at)
     assert has(captions, "Успешных сборов: **0**")
     assert has(captions, "Наблюдений в базе: **0**")
-    frame = find_df(at, "Статус")
+    frame = find_df(at, "Тип")
     assert len(frame) == 3
     assert set(frame["Статус"]) == {"⛔ Заблокировано"}
 
@@ -204,7 +204,7 @@ def test_latest_running_shows_info_and_collector_line(db_path):
     assert not at.exception
     assert has([i.value for i in at.info], "⏳ Идёт сбор (начат")
     assert has(caption_values(at), "идёт сбор")
-    assert find_df(at, "Статус")["Статус"].iloc[0] == "⏳ Идёт"
+    assert find_df(at, "Тип")["Статус"].iloc[0] == "⏳ Идёт"
 
 
 @pytest.mark.parametrize(
@@ -290,7 +290,7 @@ def test_new_run_appears_without_restart(db_path):
     at.run()
     assert not at.exception
     assert has(caption_values(at), "Всего сборов: **7**")
-    assert len(find_df(at, "Статус")) == 7
+    assert len(find_df(at, "Тип")) == 7
 
 
 def test_app_never_writes_to_the_database(db_path):
@@ -556,3 +556,108 @@ def test_marketplace_text_never_becomes_markdown_or_markup(db_path):
     shown = markdown_values(at) + caption_values(at) + info_values(at)
     assert not has(shown, "evil.example")
     assert not has(shown, "http://e.x")
+
+
+# ------------------------------------------------- characteristics, history, CSV, attempts
+
+
+def hostile_db(db_path: Path) -> str:
+    started = iso_z(utc_now() - timedelta(minutes=10))
+    name = "$x^2$ [ссылка](http://e.x) **b**"
+    plain = ok_result(started, (A, B))
+    rows = tuple(replace(row, brand="<b>x</b>", name=name) for row in plain.observations)
+    build_db(db_path, [RunSpec(started, {Q1: replace(plain, observations=rows)}, n_queries=3)])
+    return name
+
+
+def test_characteristics_table_matches_the_scenario_facts(db_path):
+    scenario_mixed(db_path)
+    at = run_app()
+    assert not at.exception
+    frame = find_df(at, "Δ к прошлому сбору")
+    assert list(frame["Позиция (текущая)"]) == [1, 2, 3, 4, 5]
+    assert list(frame["Δ к прошлому сбору"]) == ["▲ 1", "▼ 1", "▲ 1", "▼ 1", "= 0"]
+    assert list(frame["Лучшая"]) == [1, 1, 3, 1, 4]
+    assert list(frame["Худшая"]) == [2, 2, 4, 4, 5]
+    assert list(frame["В выдаче"]) == [100, 75, 100, 100, 100]
+    assert list(frame["Цена, ₽"]) == [1001, 1002, 1003, 1004, 1005]
+    assert list(frame["Реклама"]) == ["", "", "", "", "✓"]
+    assert [u.rsplit("/", 2)[1] for u in frame["ID"]] == [str(n) for n in (A, B, D, C, E)]
+    assert "Характеристики" in [h.value for h in at.subheader]
+    assert has(caption_values(at), "Прочерк «—» — данных нет")
+
+
+def test_characteristics_column_config_links_and_hides_the_index(db_path):
+    scenario_mixed(db_path)
+    at = run_app()
+    element = next(e for e in at.dataframe if "Δ к прошлому сбору" in e.value.columns)
+    config = json.loads(element.proto.columns)
+    assert config["ID"]["type_config"]["type"] == "link"
+    assert config["ID"]["type_config"]["display_text"] == r"catalog/(\d+)/detail"
+    assert config["В выдаче"]["type_config"]["format"] == "%.0f%%"
+    assert config["_index"]["hidden"] is True
+    assert has([config["Доставка, дн."]["help"]], "0 — сегодня, 1 — завтра")
+
+
+def test_history_expander_lists_every_observation_of_the_selection(db_path):
+    scenario_mixed(db_path)
+    at = run_app()
+    assert not at.exception
+    frame = find_df(at, "Время (МСК)")
+    assert len(frame) == 21
+    assert frame["Время (МСК)"].is_monotonic_decreasing
+    assert "История наблюдений" in [e.label for e in at.expander]
+
+
+def test_period_narrows_the_tables_and_the_csv(db_path):
+    built = scenario_mixed(db_path)
+    started = iso_z(parse_started(db_path, built.run_ids[-1]) - timedelta(hours=30))
+    append_run(db_path, RunSpec(started, {Q1: ok_result(started, (A,))}, "scheduler", n_queries=1))
+    at = run_app()
+    # the appended run has the highest id, so the default selection is its single product A
+    assert at.multiselect[0].value == [A]
+    assert len(find_df(at, "Время (МСК)")) == 6
+    at.sidebar.segmented_control[0].set_value("24 ч").run()
+    assert not at.exception
+    assert len(find_df(at, "Время (МСК)")) == 5
+
+
+def test_csv_button_is_enabled_and_disabled_with_the_selection(db_path):
+    scenario_mixed(db_path)
+    at = run_app()
+    assert not at.exception
+    button = at.get("download_button")[0].proto
+    assert button.label == "Скачать CSV"
+    assert not button.disabled
+    assert has(caption_values(at), "UTF-8 с BOM")
+    assert has(caption_values(at), "экранированы апострофом")
+    at.multiselect[0].set_value([]).run()
+    assert not at.exception
+    button = at.get("download_button")[0].proto
+    assert button.disabled
+    assert button.help == "Нет данных для выгрузки"
+    assert len(find_df(at, "Δ к прошлому сбору")) == 0
+
+
+def test_all_blocked_query_explains_itself_with_the_attempts_table(db_path):
+    scenario_all_blocked(db_path)
+    at = run_app()
+    assert not at.exception
+    frame = find_df(at, "Причина")
+    assert len(frame) == 3
+    assert set(frame["Статус"]) == {"⛔ Заблокировано"}
+    assert set(frame["HTTP"]) == {403}
+    assert set(frame["Причина"]) == {"http_403"}
+    assert set(frame["Товаров"]) == {0}
+    assert not any("Δ к прошлому сбору" in e.value.columns for e in at.dataframe)
+    assert not at.get("download_button")
+
+
+def test_marketplace_text_stays_inside_the_table_cells(db_path):
+    name = hostile_db(db_path)
+    at = run_app()
+    assert not at.exception
+    assert name in list(find_df(at, "Δ к прошлому сбору")["Название"])
+    shown = markdown_values(at) + caption_values(at) + info_values(at)
+    assert not has(shown, "e.x)")
+    assert not has(shown, "<b>x</b>")

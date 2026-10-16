@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Mapping
+from datetime import datetime
 
 import pandas as pd
 import streamlit as st
@@ -76,7 +77,11 @@ def render_sidebar_filters(queries: pd.DataFrame) -> tuple[Mapping | None, str, 
                 texts.QUERY_LABEL, options=list(labels), format_func=labels.__getitem__, key="query"
             )
             row = queries[queries["query_id"] == query_id].iloc[0]
-            chosen = {"query_id": int(row["query_id"]), "sheet_order": int(row["sheet_order"])}
+            chosen = {
+                "query_id": int(row["query_id"]),
+                "sheet_order": int(row["sheet_order"]),
+                "text": str(row["text"]),
+            }
         # A deselected segment returns None: it means "all time" (UI-SPEC refinement).
         period = (
             st.segmented_control(
@@ -109,6 +114,97 @@ def render_sidebar_totals(overview: Mapping) -> None:
                 st.caption(line)
 
 
+def _link_column(label: str = texts.COL_ID) -> object:
+    """Product link that shows only the number; the URL is built from the integer id alone."""
+    return st.column_config.LinkColumn(label, display_text=r"catalog/(\d+)/detail")
+
+
+def _table_config(*, characteristics: bool = False, history: bool = False) -> dict[str, object]:
+    """Column config shared by the characteristics, history and snapshot tables."""
+    cc = st.column_config
+    config: dict[str, object] = {
+        texts.COL_ID: _link_column(),
+        texts.COL_PRICE: cc.NumberColumn(format="localized"),
+        texts.COL_RATING: cc.NumberColumn(format="%.1f"),
+        texts.COL_FEEDBACKS: cc.NumberColumn(format="localized"),
+        texts.COL_DELIVERY: cc.NumberColumn(format="%d", help=texts.DELIVERY_HELP),
+        texts.COL_AD: cc.TextColumn(help=texts.AD_HELP),
+        texts.COL_POSITION: cc.NumberColumn(format="%d"),
+    }
+    if characteristics:
+        config[texts.COL_POSITION_NOW] = cc.NumberColumn(format="%d")
+        config[texts.COL_BEST] = cc.NumberColumn(format="%d")
+        config[texts.COL_WORST] = cc.NumberColumn(format="%d")
+        config[texts.COL_SHARE] = cc.NumberColumn(format="%.0f%%")
+        config[texts.COL_LAST_SEEN] = cc.DatetimeColumn(format="DD.MM.YYYY HH:mm")
+    if history:
+        config[texts.COL_TIME] = cc.DatetimeColumn(format="DD.MM.YYYY HH:mm")
+    return config
+
+
+def render_query_attempts(path: str, ver: data.DataVersion, query_id: int) -> None:
+    """The recent attempts of one query: explains a query that has no stored observations."""
+    attempts = data.load_query_attempts(path, ver, query_id)
+    cc = st.column_config
+    st.dataframe(
+        series.attempts_frame(attempts),
+        hide_index=True,
+        width="stretch",
+        placeholder="—",
+        column_config={
+            texts.COL_TIME: cc.DatetimeColumn(format="DD.MM.YYYY HH:mm"),
+            texts.COL_HTTP: cc.NumberColumn(format="%d"),
+            texts.COL_PAGES: cc.NumberColumn(format="%d"),
+            texts.COL_ITEMS: cc.NumberColumn(format="%d"),
+        },
+    )
+
+
+def render_product_tables(
+    points: pd.DataFrame,
+    selected: list[int],
+    options: pd.DataFrame,
+    query: Mapping,
+    now: datetime,
+) -> None:
+    """Characteristics, the CSV export and the history expander for the selected period.
+
+    Names, brands and sellers reach the page only inside dataframe cells (never as markdown).
+    """
+    st.subheader(texts.CHAR_TITLE)
+    st.dataframe(
+        series.characteristics_frame(points, selected, options),
+        hide_index=True,
+        width="stretch",
+        placeholder="—",
+        column_config=_table_config(characteristics=True),
+    )
+    st.caption(texts.TABLE_NULL_CAPTION)
+    has_rows = bool(selected) and bool((points["state"] == series.FOUND).any())
+    st.download_button(
+        texts.CSV_LABEL,
+        data=series.csv_bytes(points, str(query["text"])) if has_rows else b"",
+        file_name=series.csv_filename(int(query["sheet_order"]), now),
+        mime="text/csv",
+        type="primary",
+        icon=":material/download:",
+        on_click="ignore",
+        disabled=not has_rows,
+        help=None if has_rows else texts.CSV_DISABLED_HELP,
+        key=f"csv_{query['query_id']}",
+    )
+    st.caption(texts.CSV_CAPTION)
+    with st.expander(texts.HISTORY_EXPANDER):
+        st.dataframe(
+            series.history_frame(points),
+            hide_index=True,
+            width="stretch",
+            height=400,
+            placeholder="—",
+            column_config=_table_config(history=True),
+        )
+
+
 def render_positions_tab(
     path: str,
     ver: data.DataVersion,
@@ -118,7 +214,7 @@ def render_positions_tab(
     n: int,
     top_n: int,
 ) -> None:
-    """Product picker, the honest position chart, its caption and summary line."""
+    """Product picker, the honest position chart, its captions, the tables and the CSV."""
     if not overview["n_runs"]:
         st.info(texts.BANNER_NO_RUNS)
         return
@@ -139,6 +235,7 @@ def render_positions_tab(
     top_ids = () if latest_run is None else data.load_top_ids(path, ver, latest_run, query_id, n)
     if not ids:
         st.info(texts.EMPTY_QUERY_NO_DATA)
+        render_query_attempts(path, ver, query_id)
     selected = st.multiselect(
         texts.PICKER_LABEL,
         options=ids,
@@ -164,6 +261,8 @@ def render_positions_tab(
         st.plotly_chart(fig, width="stretch", config=charts.CHART_CONFIG)
     st.caption(texts.CHART_CAPTION.format(top_n=top_n))
     st.caption(texts.CHART_SUMMARY.format(k=len(selected), n=len(grid), u=len(bands)))
+    if ids:
+        render_product_tables(points, selected, options, query, clock.utc_now())
 
 
 def render_runlog_tab(run_log: pd.DataFrame, latest: Mapping | None) -> None:

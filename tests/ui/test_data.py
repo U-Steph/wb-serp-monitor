@@ -530,3 +530,122 @@ def test_cached_chart_twins_recompute_when_the_data_version_changes(db_path, mon
     assert len(calls) == 6
     run_all(data.DataVersion(2, 9, "ok"))
     assert len(calls) == 12
+
+
+# ------------------------------------------------------------------- attempts and snapshots
+
+ATTEMPT_COLUMNS = [
+    "started_at",
+    "status",
+    "http_status",
+    "pages_fetched",
+    "items_collected",
+    "error_class",
+    "duration_ms",
+]
+
+
+def test_query_attempts_of_an_all_blocked_history(db_path):
+    built = scenario_all_blocked(db_path)
+    frame = data.load_query_attempts_raw(str(db_path), built.query_ids[Q1])
+    assert list(frame.columns) == ATTEMPT_COLUMNS
+    assert len(frame) == 3
+    assert list(frame["status"]) == ["blocked"] * 3
+    assert list(frame["http_status"]) == [403] * 3
+    assert list(frame["items_collected"]) == [0] * 3
+    assert frame["started_at"].is_monotonic_decreasing
+
+
+def test_query_attempts_limit_keeps_the_newest(db_path):
+    built = scenario_mixed(db_path)
+    frame = data.load_query_attempts_raw(str(db_path), built.query_ids[Q1], 2)
+    assert len(frame) == 2
+    assert list(frame["started_at"]) == sorted(
+        [
+            scalar(str(db_path), "SELECT started_at FROM runs WHERE id = ?", (rid,))
+            for rid in built.run_ids[-2:]
+        ],
+        reverse=True,
+    )
+    assert data.ATTEMPTS_LIMIT == 10
+
+
+def test_query_attempts_of_an_unknown_query_are_empty_with_columns(db_path):
+    scenario_mixed(db_path)
+    frame = data.load_query_attempts_raw(str(db_path), 999)
+    assert frame.empty
+    assert list(frame.columns) == ATTEMPT_COLUMNS
+
+
+def test_attempt_and_snapshot_loaders_open_one_connection_and_close_it(db_path, monkeypatch):
+    built = scenario_mixed(db_path)
+    opened: list[sqlite3.Connection] = []
+    real = data.connect_ro
+
+    def spy(path):
+        con = real(path)
+        opened.append(con)
+        return con
+
+    monkeypatch.setattr(data, "connect_ro", spy)
+    path, q1 = str(db_path), built.query_ids[Q1]
+    for call in (
+        lambda: data.load_query_attempts_raw(path, q1),
+        lambda: data.load_snapshot_runs_raw(path, q1),
+        lambda: data.load_snapshot_raw(path, built.run_ids[0], q1),
+    ):
+        opened.clear()
+        call()
+        assert len(opened) == 1
+        with pytest.raises(sqlite3.ProgrammingError):
+            opened[0].execute("SELECT 1")
+
+
+SNAPSHOT_COLUMNS = [
+    "position",
+    "is_promoted",
+    "nm_id",
+    "name",
+    "brand",
+    "price_rub",
+    "rating",
+    "feedbacks",
+    "delivery_days",
+    "seller_name",
+]
+
+
+def test_snapshot_runs_are_the_runs_with_stored_observations_newest_first(db_path):
+    built = scenario_mixed(db_path)
+    frame = data.load_snapshot_runs_raw(str(db_path), built.query_ids[Q1])
+    r1, r2, r3, r4, r5, r6 = built.run_ids
+    assert list(frame.columns) == ["run_id", "started_at", "status", "items_collected"]
+    assert list(frame["run_id"]) == [r6, r5, r4, r3, r1]
+    assert list(frame["status"]) == ["ok", "ok", "partial", "ok", "ok"]
+    assert data.SNAPSHOT_RUNS_LIMIT == 500
+
+
+def test_snapshot_of_a_run_is_in_position_order(db_path):
+    built = scenario_mixed(db_path)
+    q1 = built.query_ids[Q1]
+    frame = data.load_snapshot_raw(str(db_path), built.run_ids[-1], q1)
+    assert list(frame.columns) == SNAPSHOT_COLUMNS
+    assert list(frame["nm_id"]) == [NM[k] for k in "ABDCE"]
+    assert list(frame["position"]) == [1, 2, 3, 4, 5]
+    partial = data.load_snapshot_raw(str(db_path), built.run_ids[3], q1)
+    assert list(partial["nm_id"]) == [NM["C"], NM["A"]]
+
+
+def test_snapshot_of_a_blocked_history_is_empty_with_the_contract_columns(db_path):
+    built = scenario_all_blocked(db_path)
+    q1 = built.query_ids[Q1]
+    assert data.load_snapshot_runs_raw(str(db_path), q1).empty
+    snap = data.load_snapshot_raw(str(db_path), built.run_ids[0], q1)
+    assert snap.empty
+    assert list(snap.columns) == SNAPSHOT_COLUMNS
+
+
+def test_snapshot_never_mixes_other_queries(db_path):
+    built = scenario_mixed(db_path)
+    frame = data.load_snapshot_raw(str(db_path), built.run_ids[-1], built.query_ids[Q2])
+    assert set(frame["nm_id"]) == set(Q2_IDS)
