@@ -13,8 +13,10 @@ import argparse
 import contextlib
 import json
 import logging
+import sqlite3
 import sys
 import time
+import traceback
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -25,7 +27,7 @@ from wbmon.log import configure_logging, log_event
 from wbmon.normalize import extract_normquery, payload_shape
 from wbmon.orchestrator import run_once
 from wbmon.queries import load_bundled
-from wbmon.storage.db import connect_rw
+from wbmon.storage.db import connect_ro
 from wbmon.storage.migrations import init_db
 from wbmon.storage.reader import run_summary
 from wbmon.wb_client import WbClient, make_http_client
@@ -119,6 +121,26 @@ def _probe(settings: Settings, query: str | None, *, transport, sleep) -> int:
     return 0
 
 
+def _log_run_summary(db_path: Path, run_id: int) -> None:
+    """Log the finished run's counters. Purely informational: a failure here is only a warning.
+
+    The run itself is already recorded (and ``run_done`` already logged), so an unreadable
+    database at this point must not turn a successful run into exit code 1.
+    """
+    try:
+        with contextlib.closing(connect_ro(db_path)) as con:
+            summary = run_summary(con, run_id)
+    except sqlite3.Error as exc:
+        log_event(
+            "run_summary_unavailable",
+            level=logging.WARNING,
+            run_id=run_id,
+            error=f"{type(exc).__name__}: {exc}",
+        )
+        return
+    log_event("run_summary", **(summary or {"run_id": run_id, "status": "missing"}))
+
+
 def main(argv: Sequence[str] | None = None, *, _transport=None, _sleep=None) -> int:
     """Run the CLI. ``_transport`` and ``_sleep`` are test seams for offline runs."""
     _line_buffer_stdout()
@@ -156,9 +178,7 @@ def main(argv: Sequence[str] | None = None, *, _transport=None, _sleep=None) -> 
                 sleep=_sleep or time.sleep,
             )
             if run_id is not None:
-                with contextlib.closing(connect_rw(settings.db_path)) as con:
-                    summary = run_summary(con, run_id)
-                log_event("run_summary", **(summary or {"run_id": run_id, "status": "missing"}))
+                _log_run_summary(settings.db_path, run_id)
             return 0
         raise ConfigError(f"unknown command {args.command!r}")
     except ConfigError as exc:
@@ -166,4 +186,5 @@ def main(argv: Sequence[str] | None = None, *, _transport=None, _sleep=None) -> 
         return 2
     except Exception as exc:  # last-resort handler: log and exit non-zero
         log_event("crash", level=logging.ERROR, error=f"{type(exc).__name__}: {exc}")
+        traceback.print_exc(file=sys.stderr)  # the key=value log line has no room for a stack
         return 1

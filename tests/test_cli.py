@@ -329,8 +329,36 @@ def test_unexpected_exception_is_a_crash_with_exit_one(monkeypatch, capsys):
     code, _ = collect(FakeWB(), "collect")
 
     assert code == 1
-    (line,) = event_lines(capsys.readouterr().out, "crash")
+    captured = capsys.readouterr()
+    (line,) = event_lines(captured.out, "crash")
     assert "boom" in line and "level=ERROR" in line
+    # WR-04: the full stack goes to stderr so a production crash can be diagnosed
+    assert "Traceback (most recent call last)" in captured.err
+    assert "RuntimeError: boom" in captured.err
+
+
+def test_unreadable_summary_after_a_recorded_run_does_not_flip_the_exit_code(monkeypatch, capsys):
+    """WR-04: the run is committed and run_done logged; the extra summary is best effort."""
+    import sqlite3
+
+    from wbmon import cli
+
+    def locked(*_args, **_kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(cli, "connect_ro", locked)
+    qs = bundled()
+    fake = FakeWB({(qs[0], 1): [one_page(900000001)]})
+
+    code, _ = collect(fake, "collect", "--limit-queries", "1", "--top-n", "5")
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert db_rows("SELECT status FROM runs") == [{"status": "ok"}]
+    assert event_lines(out, "run_done")
+    (warning,) = event_lines(out, "run_summary_unavailable")
+    assert "level=WARNING" in warning and "database is locked" in warning
+    assert not event_lines(out, "crash")
 
 
 def test_crash_inside_a_run_marks_the_run_error_and_exits_one(monkeypatch, capsys):
