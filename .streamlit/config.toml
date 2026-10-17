@@ -1,30 +1,30 @@
 [theme]
 base = "light"
-primaryColor = "#7B2CBF"
+primaryColor = "#7B10F5"
 backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F4F5F7"
-textColor = "#1A1D21"
-linkColor = "#6A1FA8"
-font = "sans-serif"
+secondaryBackgroundColor = "#F6F6F9"
+textColor = "#1F1F29"
+linkColor = "#4A0E8F"
+font = "Montserrat:https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap, sans-serif"
 baseFontSize = 16
 baseFontWeight = 400
-headingFontSizes = ["28px", "20px", "20px"]
-headingFontWeights = [600, 600, 600]
-metricValueFontSize = "20px"
-metricValueFontWeight = 600
-baseRadius = "6px"
-borderColor = "#DEE2E6"
+headingFontSizes = ["28px", "20px", "17px"]
+headingFontWeights = [800, 700, 700]
+metricValueFontSize = "26px"
+metricValueFontWeight = 800
+baseRadius = "12px"
+borderColor = "#E7E7EE"
 showWidgetBorder = true
-greenColor = "#2B8A3E"
-redColor = "#C92A2A"
-orangeColor = "#D9480F"
-yellowColor = "#F2C037"
-yellowTextColor = "#7A5B00"
-grayColor = "#6C757D"
-chartCategoricalColors = ["#1F77B4", "#E8590C", "#2B8A3E", "#7048E8", "#C92A2A", "#8C564B", "#D6336C", "#0C8599", "#5C940D", "#364FC7", "#B26A00", "#495057", "#A61E4D", "#087F5B", "#862E9C"]
+greenColor = "#2BBF7E"
+redColor = "#EF6B6F"
+orangeColor = "#F08A24"
+yellowColor = "#F5B04A"
+yellowTextColor = "#7A4E00"
+grayColor = "#6E6E80"
+chartCategoricalColors = ["#7B10F5", "#F0368F", "#13A89E", "#F59E0B", "#2563EB", "#E5484D", "#0EA5E9", "#65A30D", "#9333EA", "#EA580C", "#0F766E", "#DB2777", "#4F46E5", "#CA8A04", "#475569"]
 
 [client]
-toolbarMode = "viewer"
+toolbarMode = "minimal"
 # Public app: no tracebacks and no database path in the browser (details go to the server log).
 showErrorDetails = "none"
 # st.dataframe's own toolbar would export raw cell text (seller names, ...) as CSV / clipboard,

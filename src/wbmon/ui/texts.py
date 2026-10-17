@@ -24,6 +24,49 @@ TAB_SNAPSHOT = "🗂 Выдача"
 TAB_RUNLOG = "🩺 Журнал сборов"
 TAB_ABOUT = "ℹ️ О сервисе"
 
+# ------------------------------------------------------------- left menu, top bar, demo switch
+NAV_LABEL = "Разделы"
+NAV_OPTIONS = (TAB_POSITIONS, TAB_SNAPSHOT, TAB_RUNLOG, TAB_ABOUT)
+SECTION_TITLES: dict[str, str] = {
+    TAB_POSITIONS: "Позиции в поиске",
+    TAB_SNAPSHOT: "Выдача на момент сбора",
+    TAB_RUNLOG: "Журнал сборов",
+    TAB_ABOUT: "О сервисе",
+}
+MODE_LABEL = "Режим данных"
+MODE_REAL = "Реальные данные"
+MODE_DEMO = "✨ Демо"
+MODE_OPTIONS = (MODE_REAL, MODE_DEMO)
+PILL_LIVE = "Сборщик на связи · следующий сбор в {next_attempt} МСК"
+PILL_RUNNING = "Сборщик: идёт сбор (начат {hm} МСК)"
+PILL_STALE = "Сборщик: нет сигнала уже {age}"
+PILL_ABSENT = "Сборщик: нет данных (файл сигнала не найден)"
+PILL_DEMO = "Демо-данные · синтетика для показа интерфейса"
+DEMO_CARD = (
+    "✨ **Демо-режим.** Данные сгенерированы, чтобы показать интерфейс. "
+    "Реальный сбор сейчас блокирует Wildberries."
+)
+DEMO_OFF = "Выключить демо"
+DEMO_ON = "✨ Посмотреть на демо-данных"
+DEMO_SPINNER = "Готовим демо-данные…"
+DEMO_ERROR = (
+    "Не удалось подготовить демо-данные. Реальные данные доступны в режиме «Реальные данные»."
+)
+EMPTY_POSITIONS_TITLE = "Данных о товарах пока нет"
+EMPTY_POSITIONS_TEXT = (
+    "Как только Wildberries начнёт отвечать, здесь появятся график позиций "
+    "и характеристики товаров."
+)
+EMPTY_SNAPSHOT_TITLE = "Выдача пока пустая"
+EMPTY_SNAPSHOT_TEXT = (
+    "Здесь будет весь топ-{top_n} на момент выбранного сбора: позиция, цена, рейтинг, "
+    "продавец и реклама."
+)
+CHIP_RUNS = "{n} {noun}"
+CHIP_BLOCKED = "{blocked} из {n} заблокировано"
+CHIP_LAST = "последний — {when} МСК"
+CHIP_LAST_NONE = "сборов ещё не было"
+
 # ---------------------------------------------------------------------------------- statuses
 STATUS_LABELS: dict[str, str] = {
     "ok": "✅ Успешно",
@@ -165,6 +208,9 @@ BANNER_ALL_BLOCKED = (
     "⛔ Wildberries отклоняет запросы сборщика (антибот{http}). Запуски продолжаются каждый час "
     "и фиксируются в «Журнале сборов»; данные не подставляются."
 )
+BANNER_ALL_BLOCKED_TAIL = (
+    " Сервис пробует каждый час: {n} {noun} без успешных, последний — {when} МСК."
+)
 BANNER_BLOCKED = (
     "⛔ Последний сбор заблокирован Wildberries{http} по {blocked} из {n}. "
     "Данные за этот час не подставляются. Следующая попытка в {next_attempt} МСК."
@@ -215,7 +261,7 @@ _BADGE_COLOURS: dict[str, str] = {
     "abandoned": "gray",
     "running": "blue",
 }
-_RUN_FORMS = ("сбор", "сбора", "сборов")
+RUN_FORMS = ("сбор", "сбора", "сборов")
 
 # ------------------------------------------------------------------------------------- about
 # Our own copy only: the only text rendered as Markdown that is not a fixed label or a number.
@@ -356,7 +402,19 @@ def queries_genitive(n: int) -> str:
 def subtitle(n_queries: int, top_n: int) -> str:
     """The one-line caption under the title."""
     noun = plural_ru(n_queries, _QUERY_FORMS)
-    return f"{n_queries} {noun} · топ-{top_n} · Москва · сбор каждый час"
+    return f"{n_queries} {noun} из таблицы · топ-{top_n} · каждый час · доставка в Москву"
+
+
+def no_lead_icon(text: str) -> str:
+    """Drop a leading emoji token (no letter or digit in it); other text is returned unchanged.
+
+    The status banners keep their emoji in the copy for the log and the tests, while the alert
+    card draws its own round icon.
+    """
+    head, sep, rest = text.partition(" ")
+    if sep and head and not any(ch.isalnum() for ch in head):
+        return rest
+    return text
 
 
 def summary_badges(counts: Mapping[str, int], n: int) -> str:
@@ -364,7 +422,7 @@ def summary_badges(counts: Mapping[str, int], n: int) -> str:
 
     Zero counts are omitted; when there is nothing to count the line shows a single green zero.
     """
-    head = "Последний сбор:" if int(n) == 1 else f"Последние {int(n)} {plural_ru(n, _RUN_FORMS)}:"
+    head = "Последний сбор:" if int(n) == 1 else f"Последние {int(n)} {plural_ru(n, RUN_FORMS)}:"
     badges = [
         f":{_BADGE_COLOURS.get(status, 'gray')}-badge[{STATUS_LABELS.get(status, status)}: {count}]"
         for status, count in counts.items()

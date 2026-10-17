@@ -57,8 +57,11 @@ def test_queries_genitive():
 
 
 def test_subtitle():
-    assert texts.subtitle(70, 200) == "70 запросов · топ-200 · Москва · сбор каждый час"
-    assert texts.subtitle(1, 50).startswith("1 запрос ·")
+    assert (
+        texts.subtitle(70, 200)
+        == "70 запросов из таблицы · топ-200 · каждый час · доставка в Москву"
+    )
+    assert texts.subtitle(1, 50).startswith("1 запрос из таблицы ·")
 
 
 @pytest.mark.parametrize(
@@ -172,6 +175,52 @@ def test_old_running_run_does_not_count_as_alive():
     assert series.heartbeat_line(None, NOW, run).startswith("⚪")
 
 
+def test_heartbeat_pill_states():
+    assert series.heartbeat_pill(None, NOW, None) == ("none", texts.PILL_ABSENT)
+    state, text = series.heartbeat_pill(NOW - timedelta(seconds=12), NOW, None)
+    assert state == "live"
+    assert text == "Сборщик на связи · следующий сбор в 16:00 МСК"
+    assert series.heartbeat_pill(NOW - timedelta(hours=2), NOW, None) == (
+        "stale",
+        "Сборщик: нет сигнала уже 2 ч 0 мин",
+    )
+    run = {"status": "running", "started_at": ago(minutes=10)}
+    state, text = series.heartbeat_pill(None, NOW, run)
+    assert state == "live" and text.startswith("Сборщик: идёт сбор (начат")
+
+
+def test_heartbeat_pill_threshold_is_a_parameter():
+    hb = NOW - timedelta(seconds=100)
+    assert series.heartbeat_pill(hb, NOW, None, stale_s=600)[0] == "live"
+    assert series.heartbeat_pill(hb, NOW, None, stale_s=60)[0] == "stale"
+
+
+def test_empty_chips_use_the_real_counts():
+    run = {
+        "status": "blocked",
+        "started_at": ago(minutes=5),
+        "n_queries": 3,
+        "n_blocked": 3,
+    }
+    chips = series.empty_chips({"n_runs": 3}, run)
+    assert chips == ["3 сбора", "3 из 3 запросов заблокировано", "последний — 16.10 14:55 МСК"]
+
+
+def test_empty_chips_without_runs():
+    chips = series.empty_chips({"n_runs": 0}, None)
+    assert chips[0] == "0 сборов"
+    assert chips[1] == f"0 из {texts.DEFAULT_N_QUERIES} запросов заблокировано"
+    assert chips[2] == "сборов ещё не было"
+
+
+def test_no_lead_icon_drops_only_a_leading_emoji():
+    assert texts.no_lead_icon("⛔ Последний сбор") == "Последний сбор"
+    assert texts.no_lead_icon("⏸ Прерван") == "Прерван"
+    assert texts.no_lead_icon("Wildberries отклоняет") == "Wildberries отклоняет"
+    assert texts.no_lead_icon("3 сбора") == "3 сбора"
+    assert texts.no_lead_icon("Один") == "Один"
+
+
 # ------------------------------------------------------------------------------- banner
 
 
@@ -251,6 +300,18 @@ def test_banner_all_blocked_ever_uses_the_locked_copy():
     assert kind == "warning"
     assert text.startswith("⛔ Wildberries отклоняет запросы сборщика (антибот, HTTP 403). ")
     assert "данные не подставляются." in text
+
+
+def test_banner_all_blocked_appends_the_run_tail_only_when_the_count_is_known():
+    row = run_row("blocked", blocked=3)
+    assert "без успешных" not in series.banner(row, 0, 403, NOW)[1]
+    text = series.banner(row, 0, 403, NOW, n_runs=17)[1]
+    assert text.endswith("17 сборов без успешных, последний — 16.10 14:55 МСК.")
+    assert "данные не подставляются." in text
+    # other branches ignore n_runs
+    assert series.banner(run_row("blocked", blocked=3), 2, 403, NOW, n_runs=17) == series.banner(
+        run_row("blocked", blocked=3), 2, 403, NOW
+    )
 
 
 def test_banner_all_blocked_substitutes_the_observed_code_or_drops_it():

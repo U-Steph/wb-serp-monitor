@@ -112,6 +112,25 @@ def heartbeat_line(
     return texts.HEARTBEAT_STALE.format(age=texts.fmt_span(age))
 
 
+def heartbeat_pill(
+    hb_ts: datetime | None,
+    now: datetime,
+    latest_run: Mapping | None,
+    *,
+    stale_s: int = 600,
+) -> tuple[str, str]:
+    """The top-bar status pill as (state, text); state is ``live``, ``stale`` or ``none``."""
+    if _young_running(latest_run, now):
+        started = to_msk_one(str(latest_run["started_at"]))  # type: ignore[index]
+        return "live", texts.PILL_RUNNING.format(hm=texts.fmt_hm(started))  # type: ignore[arg-type]
+    if hb_ts is None:
+        return "none", texts.PILL_ABSENT
+    age = max(0.0, (now - hb_ts).total_seconds())
+    if age <= stale_s:
+        return "live", texts.PILL_LIVE.format(next_attempt=next_attempt(now))
+    return "stale", texts.PILL_STALE.format(age=texts.fmt_span(age))
+
+
 def next_attempt(now: datetime) -> str:
     """The next full Moscow hour after ``now`` as ``HH:00``."""
     upcoming = floor_hour(now.astimezone(UTC)) + timedelta(hours=1)
@@ -122,11 +141,30 @@ def _int(value: object) -> int:
     return 0 if value is None or pd.isna(value) else int(value)  # type: ignore[arg-type]
 
 
+def empty_chips(overview: Mapping, latest_run: Mapping | None) -> list[str]:
+    """Three real-number chips of the empty-state card: runs, blocked queries, last run time."""
+    n_runs = _int(overview.get("n_runs"))
+    blocked = 0 if latest_run is None else _int(latest_run.get("n_blocked"))
+    n_queries = texts.DEFAULT_N_QUERIES if latest_run is None else _int(latest_run.get("n_queries"))
+    last = None if latest_run is None else to_msk_one(str(latest_run.get("started_at")))
+    return [
+        texts.CHIP_RUNS.format(
+            n=texts.fmt_int(n_runs), noun=texts.plural_ru(n_runs, texts.RUN_FORMS)
+        ),
+        texts.CHIP_BLOCKED.format(blocked=blocked, n=texts.queries_genitive(n_queries)),
+        texts.CHIP_LAST_NONE
+        if last is None
+        else texts.CHIP_LAST.format(when=texts.fmt_dt_short(last)),
+    ]
+
+
 def banner(
     latest_run: Mapping | None,
     n_ok_runs: int,
     blocked_http: int | None,
     now: datetime,
+    *,
+    n_runs: int | None = None,
 ) -> tuple[str, str] | None:
     """The single status banner (kind, text) by the UI-SPEC rules, first match wins."""
     if latest_run is None:
@@ -153,7 +191,15 @@ def banner(
     if status == "blocked":
         if _int(n_ok_runs) == 0:
             http = "" if blocked_http is None else f", HTTP {blocked_http}"
-            return "warning", texts.BANNER_ALL_BLOCKED.format(http=http)
+            text = texts.BANNER_ALL_BLOCKED.format(http=http)
+            if n_runs is not None:
+                last = to_msk_one(str(latest_run.get("started_at")))
+                text += texts.BANNER_ALL_BLOCKED_TAIL.format(
+                    n=texts.fmt_int(n_runs),
+                    noun=texts.plural_ru(n_runs, texts.RUN_FORMS),
+                    when=texts.MISSING if last is None else texts.fmt_dt_short(last),
+                )
+            return "warning", text
         http = "" if blocked_http is None else f" (HTTP {blocked_http})"
         return "warning", texts.BANNER_BLOCKED.format(
             http=http,

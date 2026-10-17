@@ -178,7 +178,41 @@ def test_pure_modules_import_no_io_and_no_streamlit():
 
 def test_no_writer_or_html_sinks_anywhere_in_the_ui():
     for path in UI_FILES:
-        assert forbidden_call_violations(read(path)) == [], path.name
+        found = forbidden_call_violations(read(path))
+        if path.name == "theme.py":  # the one HTML sink, checked by its own test below
+            found = [needle for needle in found if needle != "st.html("]
+        assert found == [], path.name
+
+
+def test_theme_is_the_only_html_sink_and_injects_a_constant():
+    tree = ast.parse(read(UI_DIR / "theme.py"))
+    sinks = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "html"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "st"
+    ]
+    assert len(sinks) == 1
+    assert len(sinks[0].args) == 1 and not sinks[0].keywords
+    assert isinstance(sinks[0].args[0], ast.Name) and sinks[0].args[0].id == "STYLE"
+    assigned = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(t, ast.Name) and t.id == "STYLE" for t in node.targets)
+    ]
+    assert len(assigned) == 1
+    assert isinstance(assigned[0].value, ast.Constant) and isinstance(assigned[0].value.value, str)
+    style = assigned[0].value.value
+    assert style.startswith("<style>") and style.endswith("</style>")
+    for needle in ("<script", "javascript:", "@import"):
+        assert needle not in style
+    for path in UI_FILES:
+        if path.name != "theme.py":
+            assert "st.html(" not in code_text(read(path)), path.name
 
 
 def test_sql_is_select_only_and_no_write_keyword_or_pragma_assignment_appears():

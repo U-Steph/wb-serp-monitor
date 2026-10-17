@@ -45,8 +45,18 @@ NO_SUCCESS = "Успешных сборов пока нет"
 FINAL_TABS = ["📈 Позиции", "🗂 Выдача", "🩺 Журнал сборов", "ℹ️ О сервисе"]
 
 
-def run_app() -> AppTest:
-    return AppTest.from_file(APP, default_timeout=30).run()
+def run_app(section: str | None = None, *, mode: str | None = None) -> AppTest:
+    """Run the app, optionally on a given menu section and data mode (preset, no warnings)."""
+    at = AppTest.from_file(APP, default_timeout=30)
+    if section is not None:
+        at.session_state["section"] = section
+    if mode is not None:
+        at.session_state["mode"] = mode
+    return at.run()
+
+
+def menu(at: AppTest):
+    return at.radio(key="section")
 
 
 def markdown_values(at: AppTest) -> list[str]:
@@ -54,7 +64,11 @@ def markdown_values(at: AppTest) -> list[str]:
 
 
 def caption_values(at: AppTest) -> list[str]:
-    return [c.value for c in at.caption] + [c.value for c in at.sidebar.caption]
+    return (
+        [c.value for c in at.caption]
+        + [c.value for c in at.sidebar.caption]
+        + [m.value for m in at.markdown]
+    )
 
 
 def badge_values(at: AppTest) -> list[str]:
@@ -128,7 +142,7 @@ def test_non_sqlite_file_shows_the_read_error_without_path(db_path):
 
 def test_zero_runs_render_the_empty_header(db_path):
     init_db(db_path)
-    at = run_app()
+    at = run_app(texts.TAB_RUNLOG)
     assert not at.exception
     assert has(badge_values(at), NO_SUCCESS)
     assert has([i.value for i in at.info], "Сборов ещё не было")
@@ -141,9 +155,9 @@ def test_zero_runs_render_the_empty_header(db_path):
 # --------------------------------------------------------------------------------- mixed history
 
 
-def test_mixed_history_header_and_sidebar_totals(db_path):
+def test_mixed_history_header_and_run_log_totals(db_path):
     scenario_mixed(db_path)
-    at = run_app()
+    at = run_app(texts.TAB_RUNLOG)
     assert not at.exception
     badges = badge_values(at)
     assert any(v.startswith(":green-badge[") for v in badges)
@@ -160,12 +174,12 @@ def test_mixed_history_header_and_sidebar_totals(db_path):
     ):
         assert has(captions, line), line
     assert has(captions, "Первый сбор: **")
-    assert "🩺 Журнал сборов" in [tab.label for tab in at.tabs]
+    assert "🩺 Журнал сборов" in menu(at).options
 
 
 def test_mixed_history_run_table_is_newest_first(db_path):
     scenario_mixed(db_path)
-    at = run_app()
+    at = run_app(texts.TAB_RUNLOG)
     assert not at.exception
     frame = find_df(at, "Тип")
     assert len(frame) == 6
@@ -183,12 +197,13 @@ def test_mixed_history_run_table_is_newest_first(db_path):
 
 def test_all_blocked_history_is_complete_and_informative(db_path):
     scenario_all_blocked(db_path, n_runs=3)
-    at = run_app()
+    at = run_app(texts.TAB_RUNLOG)
     assert not at.exception
     assert has(
         [w.value for w in at.warning],
         "Wildberries отклоняет запросы сборщика (антибот, HTTP 403)",
     )
+    assert has([w.value for w in at.warning], "3 сбора без успешных")
     assert has(badge_values(at), NO_SUCCESS)
     captions = caption_values(at)
     assert has(captions, "Успешных сборов: **0**")
@@ -203,9 +218,9 @@ def test_all_blocked_history_is_complete_and_informative(db_path):
 
 def test_latest_running_shows_info_and_collector_line(db_path):
     scenario_latest(db_path, "running")
-    at = run_app()
+    at = run_app(texts.TAB_RUNLOG)
     assert not at.exception
-    assert has([i.value for i in at.info], "⏳ Идёт сбор (начат")
+    assert has([i.value for i in at.info], "Идёт сбор (начат")
     assert has(caption_values(at), "идёт сбор")
     assert find_df(at, "Тип")["Статус"].iloc[0] == "⏳ Идёт"
 
@@ -216,16 +231,16 @@ def test_latest_running_shows_info_and_collector_line(db_path):
         (
             "partial",
             "warning",
-            "🟡 Последний сбор завершён частично: успешно 2 из 3 запросов, "
+            "Последний сбор завершён частично: успешно 2 из 3 запросов, "
             "заблокировано 1, с ошибкой 0",
         ),
         (
             "blocked",
             "warning",
-            "⛔ Последний сбор заблокирован Wildberries (HTTP 403) по 3 из 3 запросов",
+            "Последний сбор заблокирован Wildberries (HTTP 403) по 3 из 3 запросов",
         ),
-        ("error", "error", "❌ Последний сбор завершился ошибкой"),
-        ("abandoned", "warning", "⏸ Последний сбор был прерван"),
+        ("error", "error", "Последний сбор завершился ошибкой"),
+        ("abandoned", "warning", "Последний сбор был прерван"),
     ],
 )
 def test_latest_run_banner(db_path, final, kind, needle):
@@ -250,7 +265,7 @@ def test_heartbeat_fresh(db_path):
     write_heartbeat(db_path, utc_now() - timedelta(seconds=12))
     at = run_app()
     assert not at.exception
-    assert has(caption_values(at), "на связи, сигнал")
+    assert has(caption_values(at), "Сборщик на связи · следующий сбор в")
 
 
 def test_heartbeat_stale(db_path):
@@ -279,77 +294,43 @@ def test_heartbeat_odd_timestamps_do_not_crash_or_claim_liveness(db_path, ts):
     at = run_app()
     assert not at.exception
     assert has(caption_values(at), "Сборщик: нет данных")
-    assert not has(caption_values(at), "на связи")
+    assert not has(caption_values(at), "Сборщик на связи")
 
 
-def test_a_header_failure_does_not_hide_the_tabs(db_path, monkeypatch):
-    """WR-02: the header is guarded like the tab bodies."""
+def test_a_header_failure_does_not_hide_the_menu(db_path, monkeypatch):
+    """WR-02: the header is guarded like the section bodies."""
     scenario_mixed(db_path)
 
     def boom(*_args, **_kwargs):
         raise RuntimeError("header exploded")
 
-    monkeypatch.setattr(series, "freshness", boom)
+    monkeypatch.setattr(series, "banner", boom)
     at = run_app()
     assert not at.exception
     assert has([e.value for e in at.error], "Не удалось построить этот блок")
-    assert [t.label for t in at.tabs] == FINAL_TABS
-    assert at.sidebar.selectbox
+    assert menu(at).options == FINAL_TABS
+    assert at.selectbox(key="query")
 
 
-# ------------------------------------------------------------------------- spacing (UI-SPEC)
+# ------------------------------------------------------------------------------------ the shell
 
 
-def gap_of(node) -> str | None:
-    """``'24px'`` / ``'MEDIUM'`` / ``'XSMALL'`` of a flex container block, None for other nodes."""
-    proto = getattr(node, "proto", None)
-    if (
-        proto is None
-        or not hasattr(proto, "flex_container")
-        or not proto.HasField("flex_container")
-    ):
-        return None
-    cfg = proto.flex_container.gap_config
-    which = cfg.WhichOneof("gap_spec")
-    if which == "pixel_gap":
-        return f"{cfg.pixel_gap}px"
-    if which == "gap_size":
-        return (
-            cfg.DESCRIPTOR.fields_by_name["gap_size"].enum_type.values_by_number[cfg.gap_size].name
-        )
-    return None
-
-
-def kinds(node) -> list[str]:
-    return [type(c).__name__ for c in node.children.values()]
-
-
-def test_spacing_tokens_of_the_ui_spec_are_applied(db_path):
-    """UI-1: 24 px header -> tabs and chart -> table, 32 px between blocks, 8 px in groups."""
+def test_shell_has_the_menu_topbar_and_filters(db_path):
+    """Four sections in the left menu only, the mode switch in the top bar, filters in the main."""
     scenario_mixed(db_path)
     at = run_app()
     assert not at.exception
-    # header block -> tabs: a 24 px container holds the header and the tab container
-    wrapper = next(c for c in at.main.children.values() if gap_of(c) == "24px")
-    assert "Tab" not in kinds(wrapper) and len(wrapper.children) == 2
-    assert [c.type for c in wrapper.children.values()][-1] == "tab_container"
-    # positions tab: 32 px between the picker, the chart/table group and the history
-    positions = wrapper.children[1].children[0]
-    major = next(c for c in positions.children.values() if gap_of(c) == "MEDIUM")
-    assert kinds(major) == ["Block", "Block", "Expander"]
-    picker, chart_group, _history = major.children.values()
-    assert any(type(c).__name__ == "Multiselect" for c in picker.children.values())
-    # chart -> the table below it: 24 px
-    assert gap_of(chart_group) == "24px"
-    chart_block, table_block = chart_group.children.values()
-    assert "UnknownElement" in kinds(chart_block)  # the plotly chart
-    assert "Dataframe" in kinds(table_block)
-    # sidebar: period + default N share an 8 px group; the totals lines are 8 px apart
-    groups = [c for c in at.sidebar.children.values() if gap_of(c) == "XSMALL"]
-    assert len(groups) == 2
-    assert kinds(groups[0]) == ["ButtonGroup", "NumberInput"]
-    assert kinds(groups[1]) == ["Caption"] * 5
-    assert groups[1].proto.flex_container.border is True
+    assert menu(at).options == FINAL_TABS
+    assert not at.sidebar.selectbox
+    assert not at.sidebar.segmented_control
+    assert not at.sidebar.number_input
+    assert at.segmented_control(key="mode").value == texts.MODE_REAL
+    assert at.selectbox(key="query")
+    assert at.segmented_control(key="period")
+    assert at.number_input(key="topn")
+    assert at.get("html")
+    assert at.title[0].value == "Позиции в поиске"
+    assert not at.get("tabs")
 
 
 # ---------------------------------------------------------------- cache invalidation, read-only
@@ -357,7 +338,7 @@ def test_spacing_tokens_of_the_ui_spec_are_applied(db_path):
 
 def test_new_run_appears_without_restart(db_path):
     scenario_mixed(db_path)
-    at = run_app()
+    at = run_app(texts.TAB_RUNLOG)
     assert not at.exception
     assert has(caption_values(at), "Всего сборов: **6**")
     started = iso_z(utc_now() - timedelta(minutes=1))
@@ -419,7 +400,7 @@ def test_streamlit_reads_the_theme_file_from_the_repo_root():
         check=False,
     )
     assert proc.returncode == 0, proc.stderr
-    assert proc.stdout.split() == ["none", "#7B2CBF", "True"]
+    assert proc.stdout.split() == ["none", "#7B10F5", "True"]
 
 
 # ----------------------------------------------------------------------------- «Позиции» tab
@@ -433,7 +414,7 @@ def all_chart_specs(at: AppTest) -> list[dict]:
 
 
 def chart_specs(at: AppTest) -> list[dict]:
-    """The position charts only: the run-log heatmap lives in another tab of the same page."""
+    """The position charts only: the run-log heatmap lives in another section of the page."""
     return [spec for spec in all_chart_specs(at) if spec["data"][0]["type"] != "heatmap"]
 
 
@@ -466,16 +447,17 @@ def covers(shape: dict, x: str) -> bool:
     return shape["x0"] <= x <= shape["x1"]
 
 
-def test_sidebar_offers_every_query_in_sheet_order_with_original_wording(db_path):
+def test_filter_row_offers_every_query_in_sheet_order_with_original_wording(db_path):
     scenario_mixed(db_path)
     at = run_app()
     assert not at.exception
-    assert at.sidebar.selectbox[0].options == [f"01. {Q1}", f"02. {Q2}", f"03. {Q3}"]
-    assert Q2 in at.sidebar.selectbox[0].options[1]  # Cyrillic "х" kept
-    assert at.sidebar.selectbox[0].options[2].endswith("50x70")  # Latin "x" kept
-    assert [t.label for t in at.tabs][:3] == ["📈 Позиции", "🗂 Выдача", "🩺 Журнал сборов"]
-    assert at.sidebar.segmented_control[0].value == "Всё время"
-    assert at.sidebar.number_input[0].value == 5
+    query = at.selectbox(key="query")
+    assert query.options == [f"01. {Q1}", f"02. {Q2}", f"03. {Q3}"]
+    assert Q2 in query.options[1]  # Cyrillic "х" kept
+    assert query.options[2].endswith("50x70")  # Latin "x" kept
+    assert menu(at).options[:3] == ["📈 Позиции", "🗂 Выдача", "🩺 Журнал сборов"]
+    assert at.segmented_control(key="period").value == "Всё время"
+    assert at.number_input(key="topn").value == 5
 
 
 def test_positions_tab_draws_the_honest_chart_of_the_default_top_five(db_path):
@@ -524,7 +506,7 @@ def test_positions_tab_draws_the_honest_chart_of_the_default_top_five(db_path):
 def test_changing_the_query_resets_the_selection_to_its_top(db_path):
     built = scenario_mixed(db_path)
     at = run_app()
-    at.sidebar.selectbox[0].select(built.query_ids[Q2]).run()
+    at.selectbox(key="query").select(built.query_ids[Q2]).run()
     assert not at.exception
     assert at.multiselect[0].value == list(Q2_IDS)
     spec = chart_spec(at)
@@ -535,10 +517,10 @@ def test_changing_the_query_resets_the_selection_to_its_top(db_path):
 def test_changing_the_default_count_resets_the_selection(db_path):
     scenario_mixed(db_path)
     at = run_app()
-    at.sidebar.number_input[0].set_value(2).run()
+    at.number_input(key="topn").set_value(2).run()
     assert not at.exception
     assert at.multiselect[0].value == [A, B]
-    at.sidebar.number_input[0].set_value(20).run()
+    at.number_input(key="topn").set_value(20).run()
     assert not at.exception
     assert at.multiselect[0].value == [A, B, D, C, E]
     assert has(caption_values(at), "Показано не более 15 товаров")
@@ -549,7 +531,7 @@ def test_more_than_fifteen_products_are_capped_at_the_default(db_path):
     ids = tuple(range(910000001, 910000019))
     build_db(db_path, [RunSpec(started, {Q1: ok_result(started, ids)}, n_queries=3)])
     at = run_app()
-    at.sidebar.number_input[0].set_value(20).run()
+    at.number_input(key="topn").set_value(20).run()
     assert not at.exception
     assert at.multiselect[0].value == list(ids[:15])
     assert len(at.multiselect[0].options) == 18
@@ -574,7 +556,7 @@ def test_period_narrows_the_grid_but_not_the_picker(db_path):
     at = run_app()
     assert not at.exception
     assert has(caption_values(at), "сборов в периоде: 7")
-    at.sidebar.segmented_control[0].set_value("24 ч").run()
+    at.segmented_control(key="period").set_value("24 ч").run()
     assert not at.exception
     assert has(caption_values(at), "сборов в периоде: 6")
     assert len(at.multiselect[0].options) == 6
@@ -592,38 +574,43 @@ def test_a_period_without_runs_for_the_query_says_so(db_path):
         ],
     )
     at = run_app()
-    at.sidebar.selectbox[0].select(built.query_ids[Q2]).run()
+    at.selectbox(key="query").select(built.query_ids[Q2]).run()
     assert not at.exception
     assert has(caption_values(at), "сборов в периоде: 1")
-    at.sidebar.segmented_control[0].set_value("24 ч").run()
+    at.segmented_control(key="period").set_value("24 ч").run()
     assert not at.exception
     assert has(info_values(at), "За выбранный период нет сборов по этому запросу")
     assert not chart_specs(at)
 
 
-def test_an_all_blocked_query_shows_the_info_and_a_band_only_skeleton(db_path):
+def test_all_blocked_real_database_shows_the_empty_state_with_real_counts(db_path):
     scenario_all_blocked(db_path)
     at = run_app()
     assert not at.exception
-    assert has(info_values(at), "По этому запросу пока нет успешных сборов")
-    picker = at.multiselect[0]
-    assert picker.disabled
-    assert picker.options == []
-    spec = chart_spec(at)
-    assert len(spec["layout"]["shapes"]) == 3
-    assert [t["name"] for t in spec["data"]] == ["◆ рекламное размещение", "сбор не удался"]
-    assert not has(info_values(at), "Выберите хотя бы один товар")
-    assert has(caption_values(at), "без данных (сбор не удался): 3.")
+    assert "Данных о товарах пока нет" in [h.value for h in at.subheader]
+    assert has(markdown_values(at), "3 сбора")
+    assert has(markdown_values(at), "3 из 3 запросов заблокировано")
+    assert has(markdown_values(at), "последний — ")
+    assert at.button(key="demo_on").label == texts.DEMO_ON
+    assert not at.get("plotly_chart")
+    assert not at.multiselect
+    assert not at.dataframe
+    at = run_app(texts.TAB_SNAPSHOT)
+    assert not at.exception
+    assert "Выдача пока пустая" in [h.value for h in at.subheader]
+    assert at.button(key="demo_on")
+    assert not at.select_slider
+    assert not at.metric
 
 
 def test_a_run_in_flight_adds_neither_a_column_nor_a_band_to_unreached_queries(db_path):
     built = scenario_latest(db_path, "running")
     at = run_app()
-    at.sidebar.selectbox[0].select(built.query_ids[Q2]).run()
+    at.selectbox(key="query").select(built.query_ids[Q2]).run()
     assert not at.exception
     assert chart_spec(at)["layout"].get("shapes", []) == []
     assert has(caption_values(at), "сборов в периоде: 6")
-    at.sidebar.selectbox[0].select(built.query_ids[Q1]).run()
+    at.selectbox(key="query").select(built.query_ids[Q1]).run()
     assert has(caption_values(at), "сборов в периоде: 7")
 
 
@@ -729,7 +716,7 @@ def test_period_narrows_the_tables_and_the_csv(db_path):
     # the appended run has the highest id, so the default selection is its single product A
     assert at.multiselect[0].value == [A]
     assert len(find_df(at, "Время (МСК)")) == 6
-    at.sidebar.segmented_control[0].set_value("24 ч").run()
+    at.segmented_control(key="period").set_value("24 ч").run()
     assert not at.exception
     assert len(find_df(at, "Время (МСК)")) == 5
 
@@ -749,20 +736,6 @@ def test_csv_button_is_enabled_and_disabled_with_the_selection(db_path):
     assert button.disabled
     assert button.help == "Нет данных для выгрузки"
     assert len(find_df(at, "Δ к прошлому сбору")) == 0
-
-
-def test_all_blocked_query_explains_itself_with_the_attempts_table(db_path):
-    scenario_all_blocked(db_path)
-    at = run_app()
-    assert not at.exception
-    frame = find_df(at, "Причина")
-    assert len(frame) == 3
-    assert set(frame["Статус"]) == {"⛔ Заблокировано"}
-    assert set(frame["HTTP"]) == {403}
-    assert set(frame["Причина"]) == {"http_403"}
-    assert set(frame["Товаров"]) == {0}
-    assert not any("Δ к прошлому сбору" in e.value.columns for e in at.dataframe)
-    assert not at.get("download_button")
 
 
 def test_marketplace_text_stays_inside_the_table_cells(db_path):
@@ -791,16 +764,16 @@ def started_label(db_path: Path, run_id: int) -> str:
     return texts.fmt_dt_short(series.to_msk_one(iso_z(parse_started(db_path, run_id))))
 
 
-def test_tabs_are_positions_snapshot_run_log_about(db_path):
+def test_menu_is_positions_snapshot_run_log_about(db_path):
     scenario_mixed(db_path)
     at = run_app()
-    assert [t.label for t in at.tabs] == FINAL_TABS
+    assert menu(at).options == FINAL_TABS
 
 
 def test_snapshot_slider_defaults_to_the_newest_run_with_data(db_path):
     built = scenario_mixed(db_path)
     r1, _, r3, r4, r5, r6 = built.run_ids
-    at = run_app()
+    at = run_app(texts.TAB_SNAPSHOT)
     assert not at.exception
     slider = at.select_slider[0]
     assert slider.label == "Момент сбора (МСК)"
@@ -810,7 +783,7 @@ def test_snapshot_slider_defaults_to_the_newest_run_with_data(db_path):
 
 def test_snapshot_shows_four_metrics_and_the_full_top_in_order(db_path):
     scenario_mixed(db_path)
-    at = run_app()
+    at = run_app(texts.TAB_SNAPSHOT)
     assert not at.exception
     assert {m.label: m.value for m in at.metric} == {
         "Товаров собрано": "5",
@@ -827,7 +800,7 @@ def test_snapshot_shows_four_metrics_and_the_full_top_in_order(db_path):
 
 def test_choosing_a_partial_run_shows_its_two_rows_and_status(db_path):
     built = scenario_mixed(db_path)
-    at = run_app()
+    at = run_app(texts.TAB_SNAPSHOT)
     at.select_slider[0].set_value(built.run_ids[3]).run()
     assert not at.exception
     frame = find_exact_df(at, SNAPSHOT_FRAME_COLUMNS)
@@ -838,10 +811,10 @@ def test_choosing_a_partial_run_shows_its_two_rows_and_status(db_path):
 
 def test_changing_the_query_resets_the_slider_to_its_newest_run(db_path):
     built = scenario_mixed(db_path)
-    at = run_app()
+    at = run_app(texts.TAB_SNAPSHOT)
     at.select_slider[0].set_value(built.run_ids[3]).run()
     assert at.select_slider[0].value == built.run_ids[3]
-    at.sidebar.selectbox[0].select(built.query_ids[Q3]).run()
+    at.selectbox(key="query").select(built.query_ids[Q3]).run()
     assert not at.exception
     assert at.select_slider[0].value == built.run_ids[-1]
     assert len(at.select_slider[0].options) == 6
@@ -852,7 +825,7 @@ def test_changing_the_query_resets_the_slider_to_its_newest_run(db_path):
 def test_snapshot_slider_follows_a_new_run_that_lands_while_the_page_is_open(db_path):
     """WR-04: the key-pinned slider used to stay on the previous latest run."""
     built = scenario_mixed(db_path)
-    at = run_app()
+    at = run_app(texts.TAB_SNAPSHOT)
     assert at.select_slider[0].value == built.run_ids[-1]
     started = iso_z(utc_now() - timedelta(minutes=1))
     spec = RunSpec(
@@ -868,24 +841,10 @@ def test_snapshot_slider_follows_a_new_run_that_lands_while_the_page_is_open(db_
     assert len(at.select_slider[0].options) == 6  # five runs with data, plus the new one
 
 
-def test_all_blocked_snapshot_tab_shows_the_info_and_the_attempts(db_path):
-    scenario_all_blocked(db_path)
-    at = run_app()
-    assert not at.exception
-    assert "По этому запросу пока нет успешных сборов. Ниже — результат последних попыток." in (
-        info_values(at)
-    )
-    assert not at.select_slider
-    assert not at.metric
-    attempts = [e.value for e in at.dataframe if "Причина" in e.value.columns]
-    assert len(attempts) == 2  # one under the positions tab, one under the snapshot tab
-    assert all(len(frame) == 3 for frame in attempts)
-
-
 def test_a_single_run_gives_a_slider_with_one_option(db_path):
     started = iso_z(utc_now() - timedelta(minutes=10))
     build_db(db_path, [RunSpec(started, {Q1: ok_result(started, (A, B))}, n_queries=3)])
-    at = run_app()
+    at = run_app(texts.TAB_SNAPSHOT)
     assert not at.exception
     assert len(at.select_slider[0].options) == 1
     assert len(find_exact_df(at, SNAPSHOT_FRAME_COLUMNS)) == 2
@@ -893,7 +852,7 @@ def test_a_single_run_gives_a_slider_with_one_option(db_path):
 
 def test_snapshot_query_label_is_an_escaped_caption_not_monospace_text(db_path):
     scenario_mixed(db_path)
-    at = run_app()
+    at = run_app(texts.TAB_SNAPSHOT)
     assert not at.text  # st.text would use the monospace face (UI-2)
     assert texts.md_literal(f"01. {Q1}") in caption_values(at)
     assert not has(caption_values(at), f"01. {Q1}")  # the raw wording never reaches markdown
@@ -911,7 +870,7 @@ def test_hostile_query_text_reaches_the_snapshot_caption_only_escaped(db_path):
     build_db(
         db_path, [RunSpec(started, {HOSTILE: ok_result(started, (A, B))}, n_queries=1)], (HOSTILE,)
     )
-    at = run_app()
+    at = run_app(texts.TAB_SNAPSHOT)
     assert not at.exception
     escaped = texts.md_literal(f"01. {HOSTILE}")
     assert escaped in caption_values(at)
@@ -937,7 +896,7 @@ def test_md_literal_flattens_line_breaks_so_text_cannot_open_a_block():
 
 def test_zero_runs_snapshot_tab_shows_only_the_info(db_path):
     init_db(db_path)
-    at = run_app()
+    at = run_app(texts.TAB_SNAPSHOT)
     assert not at.exception
     assert not at.select_slider
     assert not at.metric
@@ -945,7 +904,7 @@ def test_zero_runs_snapshot_tab_shows_only_the_info(db_path):
 
 def test_snapshot_keeps_marketplace_text_inside_cells(db_path):
     name = hostile_db(db_path)
-    at = run_app()
+    at = run_app(texts.TAB_SNAPSHOT)
     assert not at.exception
     frame = find_exact_df(at, SNAPSHOT_FRAME_COLUMNS)
     assert name in list(frame["Название"])
@@ -966,7 +925,7 @@ def text_values(at: AppTest) -> list[str]:
 
 def test_mixed_run_log_leads_with_badges_and_the_heatmap(db_path):
     scenario_mixed(db_path)
-    at = run_app()
+    at = run_app(texts.TAB_RUNLOG)
     assert not at.exception
     assert heatmap_z(at)[0] == [1, 3, 1, 2, 1, 1]
     assert heatmap_z(at)[1:] == [[1] * 6, [1] * 6]
@@ -986,7 +945,7 @@ def test_mixed_run_log_leads_with_badges_and_the_heatmap(db_path):
 
 def test_zero_runs_show_the_info_and_no_heatmap(db_path):
     init_db(db_path)
-    at = run_app()
+    at = run_app(texts.TAB_RUNLOG)
     assert not at.exception
     assert has(info_values(at), "Данных о сборах пока нет")
     assert not heatmap_specs(at)
@@ -997,11 +956,13 @@ def test_zero_runs_show_the_info_and_no_heatmap(db_path):
 def test_one_ok_run_gives_a_one_column_heatmap_and_a_sixty_minute_chart(db_path):
     started = iso_z(utc_now() - timedelta(minutes=10))
     build_db(db_path, [RunSpec(started, {Q1: ok_result(started, (A, B))}, n_queries=3)])
-    at = run_app()
+    at = run_app(texts.TAB_RUNLOG)
     assert not at.exception
     (heat,) = heatmap_specs(at)
     assert len(heat["data"][0]["x"]) == 1
+    at = run_app(texts.TAB_SNAPSHOT)
     assert len(at.select_slider[0].options) == 1
+    at = run_app()
     lo, hi = chart_spec(at)["layout"]["xaxis"]["range"]
     fmt = "%Y-%m-%d %H:%M:%S"
     assert datetime.strptime(hi, fmt) - datetime.strptime(lo, fmt) == timedelta(minutes=60)
@@ -1009,15 +970,13 @@ def test_one_ok_run_gives_a_one_column_heatmap_and_a_sixty_minute_chart(db_path)
 
 def test_all_blocked_history_is_a_full_red_field_with_explanations(db_path):
     scenario_all_blocked(db_path)
-    at = run_app()
+    at = run_app(texts.TAB_RUNLOG)
     assert not at.exception
     z = heatmap_z(at)
     assert len(z) == 3 and all(len(row) == 3 and set(row) == {3} for row in z)
     (spec,) = heatmap_specs(at)
     assert {g for t in spec["data"][1:] for g in t["text"]} == {"✕"}
     assert has([w.value for w in at.warning], "Wildberries отклоняет запросы сборщика")
-    attempts = [e.value for e in at.dataframe if "Причина" in e.value.columns]
-    assert len(attempts) == 2  # one under the positions tab, one under the snapshot tab
     runs = find_df(at, "Тип")
     assert list(runs["Статус"]) == ["⛔ Заблокировано"] * 3
     assert has(markdown_values(at), ":red-badge[⛔ Заблокировано: 3]")
@@ -1030,7 +989,7 @@ def test_all_blocked_history_is_a_full_red_field_with_explanations(db_path):
 )
 def test_unfinished_runs_are_in_the_table_and_badges_but_not_in_the_heatmap(db_path, final, badge):
     scenario_latest(db_path, final)
-    at = run_app()
+    at = run_app(texts.TAB_RUNLOG)
     assert not at.exception
     assert len(heatmap_z(at)[0]) == 6
     assert has(markdown_values(at), badge)
@@ -1039,19 +998,19 @@ def test_unfinished_runs_are_in_the_table_and_badges_but_not_in_the_heatmap(db_p
 
 def test_latest_error_run_shows_the_error_banner_and_a_grey_column(db_path):
     scenario_latest(db_path, "error")
-    at = run_app()
+    at = run_app(texts.TAB_RUNLOG)
     assert not at.exception
-    assert has([e.value for e in at.error], "❌ Последний сбор завершился ошибкой")
+    assert has([e.value for e in at.error], "Последний сбор завершился ошибкой")
     assert [row[-1] for row in heatmap_z(at)] == [5, 5, 5]
 
 
-def test_about_tab_has_the_methodology_and_the_repository_link(db_path):
+def test_about_section_has_the_methodology_and_the_repository_link(db_path):
     scenario_mixed(db_path)
-    at = run_app()
+    at = run_app(texts.TAB_ABOUT)
     assert not at.exception
+    assert at.title[0].value == "О сервисе"
     subheaders = [h.value for h in at.subheader]
     for title in (
-        "О сервисе",
         "Что собирается",
         "Как читать данные",
         "Честность данных",
@@ -1066,7 +1025,7 @@ def test_about_tab_has_the_methodology_and_the_repository_link(db_path):
 
 
 def subtitle_caption(at: AppTest) -> str:
-    return next(c for c in caption_values(at) if "· Москва ·" in c)
+    return next(c for c in caption_values(at) if "· каждый час ·" in c)
 
 
 def test_header_and_about_use_the_real_query_count(db_path):
@@ -1074,7 +1033,9 @@ def test_header_and_about_use_the_real_query_count(db_path):
     scenario_mixed(db_path)
     at = run_app()
     assert not at.exception
-    assert subtitle_caption(at) == "3 запроса · топ-200 · Москва · сбор каждый час"
+    assert subtitle_caption(at) == "3 запроса из таблицы · топ-200 · каждый час · доставка в Москву"
+    menu(at).set_value(texts.TAB_ABOUT).run()
+    assert not at.exception
     assert has(markdown_values(at), "(сейчас их 3)")
     assert has(markdown_values(at), "(сейчас 3;")
     assert has(markdown_values(at), "топ-200 по сортировке")
@@ -1090,18 +1051,20 @@ def test_header_ignores_queries_that_left_the_sheet_and_small_manual_runs(db_pat
     )
     build_db(db_path, [full, shrunk])  # Q3 is still stored, but the latest regular run skipped it
     at = run_app()
-    assert subtitle_caption(at).startswith("2 запроса ·")
+    assert subtitle_caption(at).startswith("2 запроса из таблицы ·")
     manual = iso_z(utc_now() - timedelta(seconds=30))
     small = RunSpec(manual, {Q1: ok_result(manual, (A,))}, trigger="manual", n_queries=1)
     append_run(db_path, small)
     at = run_app()
-    assert subtitle_caption(at).startswith("2 запроса ·")  # a one-query manual run is ignored
+    assert subtitle_caption(at).startswith(
+        "2 запроса из таблицы ·"
+    )  # a one-query manual run is ignored
 
 
 def test_empty_database_header_falls_back_to_the_named_default(db_path):
     init_db(db_path)
     at = run_app()
-    assert subtitle_caption(at).startswith(f"{texts.DEFAULT_N_QUERIES} запросов ·")
+    assert subtitle_caption(at).startswith(f"{texts.DEFAULT_N_QUERIES} запросов из таблицы ·")
 
 
 def _db_without_runs_table(path: Path) -> None:
@@ -1160,11 +1123,10 @@ def test_state_matrix_renders_without_an_exception(db_path, state):
     prepare(db_path)
     at = run_app()
     assert not at.exception
+    assert menu(at).options == FINAL_TABS
     if reaches_tabs:
-        assert [t.label for t in at.tabs] == FINAL_TABS
         assert not has([e.value for e in at.error], "Не удалось построить этот блок")
     else:
-        assert not at.tabs
         shown = [e.value for e in at.error] + info_values(at)
         assert has(shown, "Не удалось прочитать") or has(shown, "wbmon init-db")
 
@@ -1174,7 +1136,16 @@ def test_a_query_without_data_gets_the_info_and_attempts_while_others_have_a_cha
     at = run_app()
     assert not at.exception
     assert chart_spec(at)["data"]
-    at.selectbox[0].select(2).run()  # the second query was blocked in its only run
+    at.selectbox(key="query").select(2).run()  # the second query was blocked in its only run
     assert not at.exception
     assert has(info_values(at), "По этому запросу пока нет успешных сборов")
+    frame = find_df(at, "Причина")
+    assert len(frame) == 1
+    assert set(frame["Статус"]) == {"⛔ Заблокировано"}
+    assert set(frame["HTTP"]) == {403}
+    assert set(frame["Причина"]) == {"http_403"}
+    assert set(frame["Товаров"]) == {0}
+    assert not any("Δ к прошлому сбору" in e.value.columns for e in at.dataframe)
+    assert not at.get("download_button")
+    at = run_app(texts.TAB_RUNLOG)
     assert [row[0] for row in heatmap_z(at)] == [1, 3, 3]
