@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Макет · белый интерфейс</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+@property --a{syntax:'<angle>';inherits:false;initial-value:0deg}
+:root{
+  --ink:#1F1F29; --muted:#6E6E80; --line:#E7E7EE; --surface:#F6F6F9;
+  --primary:#7B10F5; --primary-dark:#4A0E8F; --primary-soft:#F1E6FF;
+  --warn-bg:#FFF2D9; --warn-ink:#7A4E00; --ok:#1FA971; --bad:#E5484D; --part:#F2A33A;
+  --spring:cubic-bezier(.34,1.56,.64,1); --ease:cubic-bezier(.22,.8,.2,1);
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:#fff;color:var(--ink);font-family:'Montserrat',system-ui,-apple-system,'Segoe UI',sans-serif;-webkit-font-smoothing:antialiased}
+button{font-family:inherit;color:inherit;cursor:pointer;border:0;background:none}
+
+/* liquid glass on white: iridescent rim that slowly shifts colour, inner highlight, soft tinted shadow */
+.glass{position:absolute;border-radius:999px;
+  background:var(--pill-bg);
+  -webkit-backdrop-filter:blur(6px) saturate(180%);backdrop-filter:blur(6px) saturate(180%);
+  backdrop-filter:url(#refract) blur(4px) saturate(190%);
+  box-shadow:var(--pill-shadow);
+  transition:left .55s var(--spring),top .55s var(--spring),width .55s var(--spring),height .55s var(--spring)}
+.iri{position:relative}
+.glass::before,.iri::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1.5px;pointer-events:none;
+  background:var(--rim);background-size:300% 100%;
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;
+  animation:sheen 6s linear infinite}
+@keyframes sheen{to{background-position:150% 0}}
+body.glass-purple{--rim:linear-gradient(110deg,#EBDDFF 0%,#8A2BE2 25%,#D9C2FF 50%,#8A2BE2 75%,#EBDDFF 100%);
+  --pill-bg:linear-gradient(180deg,#fff,#F5EEFF);
+  --pill-shadow:0 0 0 1px rgba(123,16,245,.12),0 10px 24px -10px rgba(123,16,245,.6),0 0 20px -4px rgba(123,16,245,.35),inset 0 1px 1px #fff,inset 0 -6px 12px -6px rgba(123,16,245,.16)}
+body.glass-white{--rim:linear-gradient(110deg,#fff 0%,#D9D9E3 25%,#fff 50%,#D9D9E3 75%,#fff 100%);
+  --pill-bg:linear-gradient(180deg,#fff,#F7F7FA);
+  --pill-shadow:0 0 0 1px rgba(31,31,41,.06),0 12px 26px -12px rgba(31,31,41,.45),0 3px 8px rgba(31,31,41,.08),inset 0 1px 1px #fff,inset 0 -5px 10px -6px rgba(31,31,41,.12)}
+.glass::after{content:"";position:absolute;left:14%;right:14%;top:3px;height:40%;border-radius:999px;pointer-events:none;
+  background:linear-gradient(180deg,rgba(255,255,255,.95),rgba(255,255,255,0))}
+@keyframes spin{to{--a:360deg}}
+.jelly{animation:jelly .6s var(--spring)}
+@keyframes jelly{0%{transform:scale(1,1)}30%{transform:scale(1.12,.88)}60%{transform:scale(.96,1.04)}100%{transform:scale(1,1)}}
+.vjelly{animation:vjelly .6s var(--spring)}
+@keyframes vjelly{0%{transform:scale(1,1)}30%{transform:scale(.9,1.12)}60%{transform:scale(1.03,.96)}100%{transform:scale(1,1)}}
+
+/* mock toolbar (outside the app) */
+.mockbar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;justify-content:space-between;margin:12px 16px;padding:10px 14px;border-radius:14px;border:1px dashed #CDB4FF;font-size:13px;color:var(--muted)}
+.mockbar b{color:var(--ink)}
+
+/* segmented controls */
+.seg{position:relative;display:inline-flex;padding:4px;border-radius:999px;background:var(--surface);border:1px solid var(--line)}
+.seg button{position:relative;z-index:1;padding:9px 16px;border-radius:999px;font-size:13px;font-weight:700;color:var(--muted);transition:color .3s;white-space:nowrap}
+.seg button.on{color:var(--primary-dark)}
+.seg .glass{top:4px;bottom:4px;left:4px;width:0}
+.seg.small button{padding:7px 12px;font-size:12px}
+
+/* app shell */
+.app{border-top:1px solid var(--line)}
+.topbar{display:flex;align-items:center;gap:24px;padding:10px 28px;border-bottom:1px solid var(--line);background:#fff;position:sticky;top:0;z-index:4}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:16px;white-space:nowrap}
+.live{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;background:var(--surface);border:1px solid var(--line);font-size:12.5px;font-weight:600;color:var(--muted)}
+.live i{width:8px;height:8px;border-radius:50%;background:#1FA971;box-shadow:0 0 0 0 rgba(31,169,113,.5);animation:pulse 2s infinite}
+@keyframes pulse{70%{box-shadow:0 0 0 8px rgba(31,169,113,0)}100%{box-shadow:0 0 0 0 rgba(31,169,113,0)}}
+.brand i{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-style:normal;color:#fff;font-size:17px;
+  background:linear-gradient(135deg,var(--primary),#C026D3)}
+.nav{position:relative;display:flex;gap:2px;padding:4px}
+.nav button{position:relative;z-index:1;padding:10px 18px;border-radius:999px;font-size:14px;font-weight:600;color:#3B3B4A;white-space:nowrap;transition:color .3s}
+.nav button:hover{color:var(--primary)}
+.nav button.on{color:var(--primary-dark);font-weight:700}
+.nav .glass{top:4px;bottom:4px;left:4px;width:0}
+.spacer{flex:1}
+
+.body{display:block}
+.layout-b .body{display:grid;grid-template-columns:250px 1fr}
+.sidenav{display:none}
+.layout-b .sidenav{display:flex;flex-direction:column;gap:2px;padding:20px 14px;border-right:1px solid var(--line);min-height:calc(100vh - 60px);position:relative}
+.layout-b .sidenav button{position:relative;z-index:1;text-align:left;padding:12px 16px;border-radius:14px;font-size:14px;font-weight:600;color:#3B3B4A;transition:color .3s}
+.layout-b .sidenav button.on{color:var(--primary-dark);font-weight:700}
+.layout-b .sidenav .glass{left:14px;right:14px;width:auto;border-radius:14px;height:0}
+.layout-b .topbar .nav{display:none}
+.sidenav .sep{height:1px;background:var(--line);margin:14px 6px}
+.sidenav .lbl{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:4px 16px}
+
+.content{padding:28px 32px 60px;max-width:1300px}
+.content.enter{animation:enter .45s var(--ease)}
+@keyframes enter{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+h1{margin:0;font-size:28px;font-weight:800;letter-spacing:-.02em}
+.sub{margin:6px 0 0;color:var(--muted);font-size:13.5px;font-weight:500}
+
+.info{display:flex;gap:14px;align-items:flex-start;margin-top:18px;padding:16px 18px;border-radius:14px;font-size:13.5px;line-height:1.5;font-weight:500}
+.info.warn{background:var(--warn-bg);color:var(--warn-ink)}
+.info.demo{background:var(--primary-soft);color:#4A1A88;align-items:center}
+.info .ic{width:22px;height:22px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:#fff;background:#F08A24}
+.info.demo .ic{background:var(--primary)}
+.info .grow{flex:1}
+
+.toolbar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:22px 0 18px}
+.select{display:flex;align-items:center;gap:10px;min-width:330px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;font-size:14px;font-weight:500;background:#fff}
+.select .ph{color:var(--muted)}
+.wbseg{display:inline-flex;border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+.wbseg button{padding:11px 16px;font-size:13.5px;font-weight:600;background:var(--surface);border-right:1px solid var(--line)}
+.wbseg button:last-child{border-right:0}
+.wbseg button.on{background:var(--primary-dark);color:#fff}
+.btn{padding:12px 20px;border-radius:12px;font-weight:700;font-size:14px;color:#fff;background:var(--primary);transition:transform .25s var(--spring),box-shadow .25s}
+.btn:hover{transform:translateY(-1px);box-shadow:0 10px 20px -10px rgba(123,16,245,.7)}
+.btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:7px;padding:8px 12px;border-radius:999px;font-size:12.5px;font-weight:600;background:var(--surface);border:1px solid var(--line)}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+
+.card{border:1px solid var(--line);border-radius:18px;padding:20px 22px;background:#fff;margin-bottom:18px}
+.card h3{margin:0;font-size:17px;font-weight:700}
+.cap{font-size:12.5px;color:var(--muted);margin:10px 0 0;line-height:1.5}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px}
+.kpi{border:1px solid var(--line);border-radius:18px;padding:16px 18px;background:#fff;overflow:hidden}
+.kpi .k{font-size:12px;font-weight:600;color:var(--muted)}
+.kpi .v{font-size:26px;font-weight:800;margin-top:6px;letter-spacing:-.02em}
+
+.chart-wrap{position:relative;margin-top:12px}
+.chart-wrap svg{width:100%;height:auto;display:block}
+.wm{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;font-size:88px;font-weight:800;letter-spacing:.2em;color:rgba(123,16,245,.05);transform:rotate(-10deg)}
+.tip{position:absolute;pointer-events:none;min-width:200px;padding:12px 14px;border-radius:14px;font-size:12.5px;line-height:1.6;opacity:0;transition:opacity .15s;z-index:2;
+  background:rgba(255,255,255,.9);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);box-shadow:0 14px 30px -12px rgba(31,31,41,.3)}
+.legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+
+table{width:100%;border-collapse:separate;border-spacing:0 6px;font-size:13px}
+th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:6px 12px}
+td{padding:14px 12px;background:var(--surface);font-weight:500;white-space:nowrap}
+td:first-child{border-radius:12px 0 0 12px}td:last-child{border-radius:0 12px 12px 0}
+td.wrap{white-space:normal}
+.up{color:var(--ok);font-weight:700}.down{color:var(--bad);font-weight:700}
+
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.pcard{border:1px solid var(--line);border-radius:18px;padding:10px;background:#fff;opacity:0;animation:enter .5s var(--ease) forwards;transition:transform .3s var(--spring),box-shadow .3s}
+.pcard:hover{transform:translateY(-3px);box-shadow:0 18px 30px -18px rgba(31,31,41,.35)}
+.pimg{height:150px;border-radius:12px;position:relative;overflow:hidden;background:var(--surface)}
+.pimg .pos{position:absolute;top:8px;left:8px;padding:5px 10px;border-radius:999px;font-weight:800;font-size:12px;background:#fff;box-shadow:0 4px 10px -6px rgba(31,31,41,.4)}
+.pimg .ad{position:absolute;top:8px;right:8px;padding:5px 9px;border-radius:999px;font-weight:700;font-size:11px;background:var(--primary-soft);color:var(--primary-dark)}
+.price{font-size:18px;font-weight:800;margin:10px 4px 0}
+.price s{font-size:12.5px;font-weight:500;color:var(--muted);margin-left:6px}
+.pname{font-size:12.5px;font-weight:500;margin:4px 4px 0;color:#3B3B4A;line-height:1.35}
+.pmeta{font-size:12px;color:var(--muted);margin:6px 4px 4px;display:flex;justify-content:space-between}
+
+.heat{display:grid;gap:4px;margin-top:12px;align-items:center}
+.heat .ql{font-size:12px;font-weight:600;color:#3B3B4A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:8px}
+.cell{height:22px;border-radius:6px;opacity:0;animation:pop .35s var(--spring) forwards}
+@keyframes pop{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none}}
+.c-ok{background:#2BBF7E}.c-part{background:#F5B04A}.c-bad{background:#EF6B6F}
+
+.empty{text-align:center;padding:46px 24px}
+.orb{width:82px;height:82px;margin:0 auto 16px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:34px;
+  background:var(--pill-bg);box-shadow:var(--pill-shadow)}
+.empty h3{font-size:20px;font-weight:800;margin:0}
+.empty p{max-width:560px;margin:10px auto 0;color:var(--muted);font-size:14px;line-height:1.55}
+.empty .chips{justify-content:center;margin:16px 0 22px}
+.foot{padding:0 32px 40px;font-size:12px;color:var(--muted);line-height:1.6}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.pcard,.cell{opacity:1}}
+</style>
+</head>
+<body class="glass-purple">
+<div class="mockbar">
+  <div><b>Финальный макет</b> · меню слева · Montserrat · выберите стиль стекла</div>
+  <div class="seg small" id="glassSeg"><span class="glass"></span>
+    <button data-g="purple" class="on">Фиолетовое сияние</button><button data-g="white">Белое, как у Apple</button></div>
+</div>
+
+<div class="app layout-b" id="app">
+  <div class="topbar">
+    <div class="brand">Мониторинг позиций в поиске Wildberries</div>
+    <span class="live"><i></i>Сборщик на связи · следующий сбор в 17:00 МСК</span>
+    <nav class="nav" id="nav"><span class="glass" id="navPill"></span></nav>
+    <div class="spacer"></div>
+    <div class="seg" id="demoSeg"><span class="glass"></span>
+      <button data-d="0" class="on">Реальные данные</button><button data-d="1">✨ Демо</button></div>
+  </div>
+  <div class="body">
+    <aside class="sidenav" id="sidenav"><span class="glass" id="sidePill"></span></aside>
+    <main class="content" id="content"></main>
+  </div>
+</div>
+<div class="foot">Макет. В режиме «Демо» все цифры синтетические и помечены. Кромка стекла медленно переливается в одном цвете, а тень отделяет выделенный раздел от белого фона.</div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="refract" x="-20%" y="-20%" width="140%" height="140%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.012 0.018" numOctaves="2" seed="3" result="noise"/>
+    <feGaussianBlur in="noise" stdDeviation="2" result="soft"/>
+    <feDisplacementMap in="SourceGraphic" in2="soft" scale="14" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const fmt = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+const TABS = [['positions', '📈 Позиции'], ['serp', '🗂 Выдача'], ['log', '🩺 Журнал сборов'], ['about', 'ℹ️ О сервисе']];
+const TITLES = {positions: 'Позиции в поиске', serp: 'Выдача на момент сбора', log: 'Журнал сборов', about: 'О сервисе'};
+const TIMES = Array.from({length: 24}, (_, i) => ({d: 16 + i >= 24 ? '17.10' : '16.10', h: String((16 + i) % 24).padStart(2, '0') + ':00'}));
+const SERIES = [
+  {id: '184552301', name: 'Комплект «Лаванда», сатин, 2-сп.', color: '#7B10F5', price: 2490, rating: 4.8, reviews: 1284, days: 1, seller: 'Текстиль Дом',
+   pos: [9,9,8,8,7,7,null,null,7,6,6,5,5,5,4,4,4,3,3,3,3,4,3,3], ads: []},
+  {id: '97310448', name: 'Бязь «Classic», евро', color: '#F0368F', price: 1590, rating: 4.6, reviews: 842, days: 2, seller: 'Иваново Опт',
+   pos: [3,2,2,3,3,4,4,3,3,4,4,5,5,6,5,5,5,6,6,5,5,5,6,5], ads: []},
+  {id: '223017965', name: 'Поплин «Nordic», 2-сп.', color: '#13A89E', price: 3190, rating: 4.9, reviews: 311, days: 1, seller: 'Nordic Home',
+   pos: [16,15,15,14,14,14,13,13,12,12,12,11,11,null,null,10,10,10,9,9,9,9,8,8], ads: []},
+  {id: '156889042', name: 'Сатин-жаккард «Royal», 2-сп.', color: '#F59E0B', price: 4790, rating: 4.7, reviews: 2056, days: 2, seller: 'Royal Sleep',
+   pos: [1,1,1,1,1,2,2,1,1,1,1,1,2,2,1,1,1,1,1,1,2,1,1,1], ads: [0,1,2,3,4]},
+];
+const SERP = [
+  ['Сатин-жаккард «Royal», 2-сп.', 4790, 6990, 4.7, 2056, 'Royal Sleep', true], ['Комплект «Лаванда», сатин, 2-сп.', 2490, 3990, 4.8, 1284, 'Текстиль Дом', false],
+  ['Бязь «Classic», евро', 1590, 2290, 4.6, 842, 'Иваново Опт', true], ['Перкаль «Морской бриз», 2-сп.', 2190, 3290, 4.8, 657, 'Бриз', false],
+  ['Страйп-сатин «Графит», евро', 3390, 4990, 4.9, 1530, 'Urban Linen', false], ['Хлопок «Ромашки», 1,5-сп.', 1290, 1890, 4.5, 2210, 'Иваново Опт', false],
+  ['Тенсел «Облако», 2-сп.', 5690, 7990, 4.9, 402, 'Soft Cloud', false], ['Поплин «Nordic», 2-сп.', 3190, 4490, 4.9, 311, 'Nordic Home', false],
+];
+const QUERIES = ['постельное белье 2 спальное', 'постельное белье 1.5', 'постельное белье евро', 'постельное белье', 'комплект постельного белья 2 спальный',
+  'постельное бельё', 'пастельный комплект 2-спальный', 'постельное белье 160х200 на резинке'];
+const state = {demo: false, layout: 'b', tab: 'positions'};
+
+function place(pill, btn, vertical, jelly) {
+  if (vertical) { pill.style.top = btn.offsetTop + 'px'; pill.style.height = btn.offsetHeight + 'px'; }
+  else { pill.style.left = btn.offsetLeft + 'px'; pill.style.width = btn.offsetWidth + 'px'; }
+  if (jelly) { const c = vertical ? 'vjelly' : 'jelly'; pill.classList.remove(c); void pill.offsetWidth; pill.classList.add(c); }
+}
+function buildNav() {
+  const nav = $('#nav'), side = $('#sidenav');
+  $$('button,.sep,.lbl', nav).forEach(e => e.remove());
+  $$('button,.sep,.lbl', side).forEach(e => e.remove());
+  const lbl = document.createElement('div'); lbl.className = 'lbl'; lbl.textContent = 'Разделы'; side.appendChild(lbl);
+  for (const [id, label] of TABS) {
+    for (const host of [nav, side]) {
+      const b = document.createElement('button');
+      b.textContent = label; b.dataset.tab = id; if (id === state.tab) b.classList.add('on');
+      b.addEventListener('click', () => selectTab(id)); host.appendChild(b);
+    }
+  }
+  requestAnimationFrame(placeNav);
+}
+function placeNav(jelly) {
+  if (state.layout === 'a') place($('#navPill'), $('#nav button.on'), false, jelly);
+  else place($('#sidePill'), $('#sidenav button.on'), true, jelly);
+}
+function selectTab(id) {
+  if (id === state.tab) return;
+  state.tab = id;
+  $$('#nav button, #sidenav button').forEach(b => b.classList.toggle('on', b.dataset.tab === id));
+  placeNav(true); render();
+}
+function setDemo(on) {
+  state.demo = on;
+  const seg = $('#demoSeg');
+  $$('button', seg).forEach(b => b.classList.toggle('on', b.dataset.d === (on ? '1' : '0')));
+  place($('.glass', seg), $('button.on', seg), false, true);
+  render();
+}
+function setLayout(l) {
+  state.layout = l;
+  $('#app').className = 'app layout-' + l;
+  requestAnimationFrame(() => placeNav(false));
+  render();
+}
+
+function header() {
+  const info = state.demo
+    ? `<div class="info demo"><span class="ic">✨</span><span class="grow"><b>Демо-режим.</b> Данные сгенерированы, чтобы показать интерфейс. Реальный сбор сейчас блокирует Wildberries.</span><button class="btn ghost" data-off="1">Выключить демо</button></div>`
+    : `<div class="info warn"><span class="ic">!</span><span class="grow">Wildberries блокирует автоматические запросы к поиску (ответ 403). Сервис пробует каждый час: 17 сборов подряд, последний — 17.10 в 16:00 МСК. Данные не подставляются.</span></div>`;
+  return `<h1>${TITLES[state.tab]}</h1><p class="sub">70 запросов из таблицы · топ-200 · каждый час · доставка в Москву</p>${info}`;
+}
+function toolbar() {
+  if (state.tab !== 'positions' && state.tab !== 'serp') return '';
+  const prods = state.demo ? SERIES.map(s => `<span class="chip"><i class="dot" style="background:${s.color}"></i>${s.id}</span>`).join('') : '<span class="chip" style="color:var(--muted)">Товаров пока нет</span>';
+  return `<div class="toolbar"><div class="select"><span>🔍</span><span>01. постельное белье 2 спальное</span><span class="ph" style="margin-left:auto">▾</span></div>
+    <div class="wbseg"><button class="on">24 ч</button><button>7 дней</button><button>Всё время</button></div>
+    <div class="chips">${prods}</div><div class="spacer"></div><button class="btn ghost">⬇ CSV</button></div>`;
+}
+function empty(title, text) {
+  return `<div class="card empty"><div class="orb iri">🛡️</div><h3>${title}</h3><p>${text}</p>
+    <div class="chips"><span class="chip">17 сборов подряд</span><span class="chip">70 из 70 запросов заблокировано</span><span class="chip">последний — 17.10, 16:00</span></div>
+    <button class="btn" data-on="1">✨ Посмотреть на демо-данных</button></div>`;
+}
+function positions() {
+  if (!state.demo) return empty('Данных о товарах пока нет', 'Как только Wildberries начнёт отвечать, здесь появятся график позиций и характеристики товаров.');
+  const kp = [['Товаров в выдаче', 200, ''], ['Средняя цена, топ-10', 2840, ' ₽'], ['Средний рейтинг, топ-10', 4.8, ''], ['Доставка в Москву', '1–2 дня', '']];
+  const rows = SERIES.map(s => {
+    const now = s.pos.at(-1), prev = s.pos.at(-2), d = prev && now ? prev - now : 0;
+    const delta = d > 0 ? `<span class="up">▲ ${d}</span>` : d < 0 ? `<span class="down">▼ ${-d}</span>` : '—';
+    return `<tr><td><i class="dot" style="background:${s.color}"></i> ${s.id}</td><td class="wrap">${s.name}</td><td>${fmt(s.price)} ₽</td><td>★ ${String(s.rating).replace('.', ',')}</td>
+      <td>${fmt(s.reviews)}</td><td>${s.days}</td><td>${s.seller}</td><td><b>${now}</b></td><td>${delta}</td></tr>`;
+  }).join('');
+  return `<div class="kpis">${kp.map(([k, v, suf]) => `<div class="kpi"><div class="k">${k}</div><div class="v" ${typeof v === 'number' ? `data-to="${v}" data-suf="${suf}"` : ''}>${typeof v === 'number' ? '0' + suf : v}</div></div>`).join('')}</div>
+    <div class="card"><h3>Динамика позиций · 24 часа</h3>
+      <div class="legend">${SERIES.map(s => `<span class="chip"><i class="dot" style="background:${s.color}"></i>${s.id}</span>`).join('')}<span class="chip">◆ реклама</span><span class="chip">○ вышел из топа / вернулся</span></div>
+      <div class="chart-wrap" id="chart">${chart()}<div class="wm">ДЕМО</div><div class="tip" id="tip"></div></div>
+      <p class="cap">Позиция 1 — сверху. <b>Разрыв линии — не ошибка:</b> в этот час товара не было в топ-200, и по ТЗ выдумывать ему позицию нельзя. Кружки отмечают, где товар вышел из выдачи и где вернулся.</p></div>
+    <div class="card"><h3>Характеристики товаров</h3><table><thead><tr><th>ID</th><th>Название</th><th>Цена</th><th>Рейтинг</th><th>Отзывов</th><th>Доставка, дн.</th><th>Продавец</th><th>Позиция</th><th>Δ</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+const CH = {W: 900, H: 320, L: 46, R: 18, T: 18, B: 36, max: 18};
+const cx = i => CH.L + i * (CH.W - CH.L - CH.R) / (TIMES.length - 1);
+const cy = p => CH.T + (p - 1) * (CH.H - CH.T - CH.B) / (CH.max - 1);
+function chart() {
+  let g = '', lines = '', marks = '';
+  for (const p of [1, 5, 10, 15]) g += `<line x1="${CH.L}" x2="${CH.W - CH.R}" y1="${cy(p)}" y2="${cy(p)}" stroke="#EEEEF3"/><text x="${CH.L - 10}" y="${cy(p) + 4}" text-anchor="end" font-size="11" fill="#6E6E80" font-weight="600">${p}</text>`;
+  TIMES.forEach((t, i) => { if (i % 4 === 0) g += `<text x="${cx(i)}" y="${CH.H - 10}" text-anchor="middle" font-size="11" fill="#6E6E80" font-weight="600">${t.h}</text>`; });
+  for (const s of SERIES) {
+    let d = '';
+    s.pos.forEach((p, i) => { if (p == null) return; d += `${i === 0 || s.pos[i - 1] == null ? 'M' : 'L'}${cx(i).toFixed(1)},${cy(p).toFixed(1)} `; });
+    for (const seg of d.trim().split(/(?=M)/)) lines += `<path class="line" d="${seg.trim()}" fill="none" stroke="${s.color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
+    s.pos.forEach((p, i) => {
+      if (p == null) return;
+      const edge = (i > 0 && s.pos[i - 1] == null) || (i < s.pos.length - 1 && s.pos[i + 1] == null);
+      if (s.ads.includes(i)) marks += `<path d="M${cx(i)},${cy(p) - 6} L${cx(i) + 6},${cy(p)} L${cx(i)},${cy(p) + 6} L${cx(i) - 6},${cy(p)} Z" fill="${s.color}" stroke="#fff" stroke-width="1.5"/>`;
+      else if (edge) marks += `<circle cx="${cx(i)}" cy="${cy(p)}" r="5" fill="#fff" stroke="${s.color}" stroke-width="2.5"/>`;
+    });
+  }
+  return `<svg viewBox="0 0 ${CH.W} ${CH.H}" role="img" aria-label="График позиций">${g}${lines}${marks}
+    <line id="guide" x1="0" x2="0" y1="${CH.T}" y2="${CH.H - CH.B}" stroke="rgba(123,16,245,.35)" stroke-dasharray="4 4" opacity="0"/>
+    <rect id="hover" x="${CH.L}" y="0" width="${CH.W - CH.L - CH.R}" height="${CH.H}" fill="transparent"/></svg>`;
+}
+function serp() {
+  if (!state.demo) return empty('Выдача пока пустая', 'Здесь будет весь топ-200 на момент выбранного сбора: позиция, цена, рейтинг, продавец и реклама.');
+  return `<div class="grid">${SERP.map(([n, price, old, r, rev, seller, ad], i) => `<div class="pcard" style="animation-delay:${i * 60}ms">
+    <div class="pimg" style="background:linear-gradient(135deg,#F3F0FA,#E9E6F2)"><span class="pos">#${i + 1}</span>${ad ? '<span class="ad">Реклама</span>' : ''}</div>
+    <div class="price">${fmt(price)} ₽<s>${fmt(old)} ₽</s></div><div class="pname">${n}</div>
+    <div class="pmeta"><span>★ ${String(r).replace('.', ',')} · ${fmt(rev)}</span><span>${seller}</span></div></div>`).join('')}</div>`;
+}
+function runlog() {
+  const runs = 17; let cells = '';
+  QUERIES.forEach((q, r) => {
+    cells += `<div class="ql">${q}</div>`;
+    for (let c = 0; c < runs; c++) {
+      let cls = 'c-bad';
+      if (state.demo) { const v = (r * 7 + c * 3) % 11; cls = v === 0 ? 'c-bad' : v < 3 ? 'c-part' : 'c-ok'; }
+      cells += `<div class="cell ${cls}" style="animation-delay:${(r * runs + c) * 5}ms"></div>`;
+    }
+  });
+  return `<div class="card"><h3>${state.demo ? 'Сборы · демо' : 'Сборы · реальные данные'}</h3>
+    <div class="legend"><span class="chip"><i class="dot c-ok"></i>успешно</span><span class="chip"><i class="dot c-part"></i>частично</span><span class="chip"><i class="dot c-bad"></i>заблокировано</span></div>
+    <div class="heat" style="grid-template-columns:minmax(150px,240px) repeat(${runs},minmax(0,1fr))">${cells}</div>
+    <p class="cap">${state.demo ? 'Каждая клетка — один запрос в одном сборе.' : 'Все 17 сборов с 00:33 до 16:00 закончились блокировкой (403). Сервис не останавливается и пробует каждый час.'}</p></div>`;
+}
+function about() {
+  return `<div class="card"><h3>Как работает сервис</h3><p class="cap" style="font-size:14px">Каждый час берёт 70 запросов из Google-таблицы, ищет их на Wildberries с доставкой в Москву и сохраняет топ-200: позицию, ID, цену, рейтинг, отзывы, срок доставки и продавца. История только дополняется.</p>
+    <p class="cap" style="font-size:14px">Если сбор не удался, это видно в журнале. Пропуски на графике не заполняются выдуманными значениями.</p></div>`;
+}
+function render() {
+  const c = $('#content');
+  c.innerHTML = header() + toolbar() + {positions, serp, log: runlog, about}[state.tab]();
+  c.classList.remove('enter'); void c.offsetWidth; c.classList.add('enter');
+  $$('[data-on]', c).forEach(b => b.addEventListener('click', () => setDemo(true)));
+  $$('[data-off]', c).forEach(b => b.addEventListener('click', () => setDemo(false)));
+  $$('[data-to]', c).forEach(el => {
+    const to = Number(el.dataset.to), suf = el.dataset.suf || '', dec = to % 1 !== 0, t0 = performance.now();
+    const step = now => { const k = Math.min(1, (now - t0) / 900), v = to * (1 - Math.pow(1 - k, 3));
+      el.textContent = (dec ? v.toFixed(1).replace('.', ',') : fmt(Math.round(v))) + suf; if (k < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  });
+  $$('.line', c).forEach((p, i) => { const L = p.getTotalLength(); p.style.strokeDasharray = L; p.style.strokeDashoffset = L; p.getBoundingClientRect();
+    p.style.transition = `stroke-dashoffset 1.1s cubic-bezier(.22,.8,.2,1) ${i * 40}ms`; p.style.strokeDashoffset = '0'; });
+  const ch = $('#chart', c); if (!ch) return;
+  const svg = $('svg', ch), tip = $('#tip', ch), guide = $('#guide', svg);
+  $('#hover', svg).addEventListener('mousemove', e => {
+    const rect = svg.getBoundingClientRect(), x = (e.clientX - rect.left) / rect.width * CH.W;
+    const i = Math.max(0, Math.min(TIMES.length - 1, Math.round((x - CH.L) / ((CH.W - CH.L - CH.R) / (TIMES.length - 1)))));
+    guide.setAttribute('x1', cx(i)); guide.setAttribute('x2', cx(i)); guide.setAttribute('opacity', '1');
+    tip.innerHTML = `<b>${TIMES[i].d}, ${TIMES[i].h} МСК</b><br>` + SERIES.map(s => `<i class="dot" style="background:${s.color}"></i> ID ${s.id}: ${s.pos[i] == null ? '<span style="color:#6E6E80">нет в топ-200</span>' : 'позиция <b>' + s.pos[i] + '</b>' + (s.ads.includes(i) ? ' ◆' : '')}`).join('<br>');
+    tip.style.left = Math.min(cx(i) / CH.W * rect.width + 14, rect.width - 230) + 'px'; tip.style.top = '8px'; tip.style.opacity = '1';
+  });
+  $('#hover', svg).addEventListener('mouseleave', () => { tip.style.opacity = '0'; guide.setAttribute('opacity', '0'); });
+}
+$$('#demoSeg button').forEach(b => b.addEventListener('click', () => setDemo(b.dataset.d === '1')));
+$$('#glassSeg button').forEach(b => b.addEventListener('click', () => {
+  document.body.className = 'glass-' + b.dataset.g;
+  $$('#glassSeg button').forEach(x => x.classList.toggle('on', x === b));
+  place($('#glassSeg .glass'), b, false, true);
+}));
+window.addEventListener('resize', () => { placeNav(false); for (const id of ['#demoSeg', '#glassSeg']) place($(`${id} .glass`), $(`${id} button.on`), false, false); });
+document.fonts && document.fonts.ready.then(() => window.dispatchEvent(new Event('resize')));
+buildNav(); setLayout('b');
+requestAnimationFrame(() => place($('#glassSeg .glass'), $('#glassSeg button.on'), false, false));
+requestAnimationFrame(() => place($('#demoSeg .glass'), $('#demoSeg button.on'), false, false));
+</script>
+</body>
+</html>

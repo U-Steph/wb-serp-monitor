@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-10-16)
 Phase: 4 (publish-deliverables) — EXECUTING
 Plan: 3 of 3
 Status: Ready to execute
-Last activity: 2026-10-16 -- Phase 4 execution started
+Last activity: 2026-10-17 - Completed quick task 261017-niw: UI redesign + demo mode + DATA_ACCESS note (deployed to the VPS web service)
 
 Progress: [█████████░] 13 of 15 plans (87%)
 
@@ -96,6 +96,12 @@ None yet.
 - [Phase 1]: Delivery-days formula, price field (`min(sizes[].price.product)/100`), rating/review semantics and Moscow `dest=-1257786` are unverified hypotheses; raw inputs are stored so they can be recalibrated.
 - [Phase 2/4]: `.env.example` not created in 02-02 (user permission denies `.env*` writes); ready content at the executor scratchpad (`env_example.txt`, tests in `env_tests.py`); OPS-02 left open, to be covered by the Phase 4 README configuration table or by the user adding the file.
 - .env.example not created (user permission denies .env* writes); content at scratchpad env_example.txt; OPS-02 docs deferred to Phase 4 README
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 261017-niw | Редизайн веб-интерфейса (белый, Montserrat, белое жидкое стекло, меню слева), демо-режим на отдельной синтетической базе, записка docs/DATA_ACCESS.md | 2026-10-17 | b3bcc3e | [261017-niw-ui-redesign-demo-mode](./quick/261017-niw-ui-redesign-demo-mode/) |
 
 ## Deferred Items
 
