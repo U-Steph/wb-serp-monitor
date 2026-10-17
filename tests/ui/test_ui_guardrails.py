@@ -35,6 +35,15 @@ WBMON_ALLOWED: dict[str, set[str] | None] = {
     "wbmon.storage.reader": {"MAX_IN_IDS"},
     "wbmon.ui": None,
 }
+# demo.py is the only UI module that builds a database (a synthetic one in the temp directory)
+DEMO_EXTRA: dict[str, set[str] | None] = {
+    "wbmon.storage.db": {"connect_ro", "connect_rw"},
+    "wbmon.storage.migrations": {"init_db"},
+    "wbmon.storage.writer": {"Writer"},
+    "wbmon.models": {"ObservationRow", "QueryResult"},
+    "wbmon.queries": {"load_bundled"},
+}
+DEMO_ALLOWED: dict[str, set[str] | None] = {**WBMON_ALLOWED, **DEMO_EXTRA}
 FORBIDDEN_CALLS = (
     "unsafe_allow_html",
     "use_container_width",
@@ -81,20 +90,22 @@ def imports_of(source: str) -> list[tuple[str, set[str]]]:
     return found
 
 
-def import_violations(source: str) -> list[str]:
+def import_violations(
+    source: str, allowed: dict[str, set[str] | None] = WBMON_ALLOWED
+) -> list[str]:
     problems: list[str] = []
     for module, names in imports_of(source):
         top = module.split(".")[0]
         if top in NEVER_IMPORTED:
             problems.append(f"network/process/numpy module: {module}")
         elif top == "wbmon":
-            key = module if module in WBMON_ALLOWED else None
+            key = module if module in allowed else None
             if key is None and module.startswith("wbmon.ui."):
                 key = "wbmon.ui"
             if key is None:
                 problems.append(f"wbmon module outside the allow-list: {module}")
-            elif WBMON_ALLOWED[key] is not None and not names <= WBMON_ALLOWED[key]:
-                problems.append(f"{module}: {sorted(names - WBMON_ALLOWED[key])}")
+            elif allowed[key] is not None and not names <= allowed[key]:
+                problems.append(f"{module}: {sorted(names - allowed[key])}")
         elif top not in sys.stdlib_module_names and top not in THIRD_PARTY_ALLOWED:
             problems.append(f"third-party module outside streamlit/pandas/plotly: {module}")
     return problems
@@ -167,7 +178,21 @@ def test_the_ui_tree_exists():
 
 def test_imports_are_the_read_only_stack_and_the_wbmon_allow_list():
     for path in UI_FILES:
-        assert import_violations(read(path)) == [], path.name
+        if path.name != "demo.py":  # the demo builder has its own, wider list (next test)
+            assert import_violations(read(path)) == [], path.name
+
+
+def test_demo_module_is_the_only_writer():
+    demo = read(UI_DIR / "demo.py")
+    assert import_violations(demo, DEMO_ALLOWED) == []
+    assert import_violations(demo) != []  # the read-only list would reject it
+    assert "streamlit" not in {module.split(".")[0] for module, _ in imports_of(demo)}
+    for path in UI_FILES:
+        if path.name == "demo.py":
+            continue
+        text = code_text(read(path))
+        for needle in ("connect_rw", "Writer", "init_db"):
+            assert needle not in text, (path.name, needle)
 
 
 def test_pure_modules_import_no_io_and_no_streamlit():
@@ -181,6 +206,8 @@ def test_no_writer_or_html_sinks_anywhere_in_the_ui():
         found = forbidden_call_violations(read(path))
         if path.name == "theme.py":  # the one HTML sink, checked by its own test below
             found = [needle for needle in found if needle != "st.html("]
+        if path.name == "demo.py":  # the one module that builds the synthetic temp database
+            found = [needle for needle in found if needle != "connect_rw"]
         assert found == [], path.name
 
 

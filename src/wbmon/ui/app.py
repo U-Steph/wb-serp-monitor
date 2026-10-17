@@ -13,13 +13,14 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Mapping
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
 from wbmon import clock
 from wbmon.config import ConfigError, Settings
-from wbmon.ui import charts, data, series, texts, theme
+from wbmon.ui import charts, data, demo, series, texts, theme
 
 logger = logging.getLogger("wbmon.ui")
 
@@ -36,17 +37,26 @@ def _guarded(render: Callable[..., None], *args: object) -> None:
         st.error(texts.ERROR_BLOCK)
 
 
+@st.cache_resource(show_spinner=texts.DEMO_SPINNER)
+def _demo_db(real_db_path: str) -> str:
+    """Build the synthetic demo database once per web process; returns its (temp) path."""
+    return str(demo.ensure_demo_db(real_db_path))
+
+
 def _set_mode(value: str) -> None:
     """Button callback: switch the data mode (session-only, never persisted)."""
     st.session_state["mode"] = value
 
 
-def render_pill(settings: Settings, latest: Mapping | None) -> None:
-    """The collector status pill of the top bar, driven by the scheduler heartbeat file."""
-    heartbeat = data.read_heartbeat(settings.db_path)
-    state, text = series.heartbeat_pill(
-        heartbeat, clock.utc_now(), latest, stale_s=data.HEARTBEAT_STALE_S
-    )
+def render_pill(settings: Settings, latest: Mapping | None, demo_on: bool = False) -> None:
+    """The status pill of the top bar: the scheduler heartbeat, or the demo label in demo mode."""
+    if demo_on:
+        state, text = "demo", texts.PILL_DEMO
+    else:
+        heartbeat = data.read_heartbeat(settings.db_path)
+        state, text = series.heartbeat_pill(
+            heartbeat, clock.utc_now(), latest, stale_s=data.HEARTBEAT_STALE_S
+        )
     with st.container(key=f"pill_{state}", width="content"):
         st.markdown(text)
 
@@ -57,13 +67,19 @@ def render_header(
     latest: Mapping | None,
     blocked_http: int | None,
     settings: Settings,
+    demo_on: bool,
 ) -> None:
-    """Section title, subtitle and at most one status card (the banner)."""
+    """Section title, subtitle and one status card: the banner, or the purple card in demo mode."""
     now = clock.utc_now()
     st.title(texts.SECTION_TITLES[section])
     st.caption(
         texts.subtitle(series.sheet_size(overview), overview["top_n_latest"] or settings.top_n)
     )
+    if demo_on:
+        with st.container(key="demo_card", horizontal=True, vertical_alignment="center"):
+            st.markdown(texts.DEMO_CARD)
+            st.button(texts.DEMO_OFF, key="demo_off", on_click=_set_mode, args=(texts.MODE_REAL,))
+        return
     shown = series.banner(
         latest, overview["n_ok_runs"], blocked_http, now, n_runs=int(overview["n_runs"])
     )
@@ -229,6 +245,7 @@ def render_positions_section(
     latest: Mapping | None,
     top_n: int,
     ns: str,
+    demo_on: bool = False,
 ) -> None:
     """Filter row, product picker, the honest position chart, its tables and the CSV."""
     if not int(overview["n_obs"]):
@@ -310,11 +327,13 @@ def render_positions_section(
                 series.series_names(options),
                 series.x_range(grid),
                 top_n,
+                texts.DEMO_WATERMARK if demo_on else None,
             )
         if ids:
             with c_csv:
                 render_csv_button(points, selected, query, clock.utc_now(), ns)
     with st.container(key="card_chart"):
+        st.subheader(texts.CHART_TITLE)
         st.plotly_chart(fig, width="stretch", config=charts.CHART_CONFIG)
         st.caption(texts.CHART_CAPTION.format(top_n=top_n))
         st.caption(texts.CHART_SUMMARY.format(k=len(selected), n=len(grid), u=len(bands)))
@@ -484,7 +503,7 @@ def main() -> None:
     with st.container(key="topbar"):
         left, right = st.columns([3, 1.3], vertical_alignment="center")
         with right, st.container(horizontal=True, horizontal_alignment="right"):
-            st.segmented_control(
+            mode = st.segmented_control(
                 texts.MODE_LABEL,
                 texts.MODE_OPTIONS,
                 key="mode",
@@ -502,19 +521,33 @@ def main() -> None:
         logger.exception("invalid configuration")
         st.error(texts.ERROR_DB_READ)
         st.stop()
+    demo_on = mode == texts.MODE_DEMO
+    ns = "demo_" if demo_on else ""
     path = str(settings.db_path)
+    if demo_on:
+        try:
+            path = _demo_db(path)
+            if not Path(path).is_file():  # the temp file was cleaned up behind the cache
+                _demo_db.clear()
+                path = _demo_db(str(settings.db_path))
+        except (ValueError, OSError, *data.READ_ERRORS):
+            logger.exception("demo database failed")
+            with pill_box:
+                _guarded(render_pill, settings, None, True)
+            st.error(texts.DEMO_ERROR)
+            st.stop()
 
     status = data.db_status(path)
     if status in ("missing", "uninitialized"):
         with pill_box:
-            _guarded(render_pill, settings, None)
+            _guarded(render_pill, settings, None, demo_on)
         st.title(texts.SECTION_TITLES[section])
         st.caption(texts.subtitle(texts.DEFAULT_N_QUERIES, settings.top_n))
         st.info(texts.EMPTY_NO_DB)
         st.stop()
     if status == "error":
         with pill_box:
-            _guarded(render_pill, settings, None)
+            _guarded(render_pill, settings, None, demo_on)
         st.error(texts.ERROR_DB_READ)
         st.stop()
 
@@ -531,17 +564,16 @@ def main() -> None:
     except data.READ_ERRORS:
         logger.exception("database read failed")
         with pill_box:
-            _guarded(render_pill, settings, None)
+            _guarded(render_pill, settings, None, demo_on)
         st.error(texts.ERROR_DB_READ)
         st.stop()
 
     with pill_box:
-        _guarded(render_pill, settings, latest)
-    ns = ""
+        _guarded(render_pill, settings, latest, demo_on)
     top_n = int(overview["top_n_latest"] or settings.top_n)
-    _guarded(render_header, section, overview, latest, blocked_http, settings)
+    _guarded(render_header, section, overview, latest, blocked_http, settings, demo_on)
     if section == texts.TAB_POSITIONS:
-        _guarded(render_positions_section, path, ver, overview, queries, latest, top_n, ns)
+        _guarded(render_positions_section, path, ver, overview, queries, latest, top_n, ns, demo_on)
     elif section == texts.TAB_SNAPSHOT:
         _guarded(render_snapshot_section, path, ver, overview, queries, latest, top_n, ns)
     elif section == texts.TAB_RUNLOG:

@@ -20,21 +20,21 @@ import plotly.graph_objects as go
 from wbmon.ui import series, texts
 
 SERIES_COLORS: tuple[str, ...] = (
-    "#1F77B4",
-    "#E8590C",
-    "#2B8A3E",
-    "#7048E8",
-    "#C92A2A",
-    "#8C564B",
-    "#D6336C",
-    "#0C8599",
-    "#5C940D",
-    "#364FC7",
-    "#B26A00",
-    "#495057",
-    "#A61E4D",
-    "#087F5B",
-    "#862E9C",
+    "#7B10F5",
+    "#F0368F",
+    "#13A89E",
+    "#F59E0B",
+    "#2563EB",
+    "#E5484D",
+    "#0EA5E9",
+    "#65A30D",
+    "#9333EA",
+    "#EA580C",
+    "#0F766E",
+    "#DB2777",
+    "#4F46E5",
+    "#CA8A04",
+    "#475569",
 )
 DASH_FROM = 9  # series 10..15 are dashed so that 15 hues are not the only signal
 BAND_FILL = "rgba(134,142,150,0.20)"
@@ -57,9 +57,11 @@ HOVER_TEMPLATE = (
 # "ID 123456789 · BRAND" at 14 px plus the marker; longer names are cut so they cannot spill over.
 LEGEND_ENTRY_PX = 250
 LEGEND_NAME_CHARS = 32
-GRID_COLOR = "#E9ECEF"
-AXIS_COLOR = "#CED4DA"
-TEXT_COLOR = "#1A1D21"
+GRID_COLOR = "#EEEEF3"
+AXIS_COLOR = "#E7E7EE"
+TEXT_COLOR = "#1F1F29"
+FONT_FAMILY = "Montserrat, sans-serif"
+WATERMARK_COLOR = "rgba(123,16,245,0.07)"
 GREY = "#868E96"
 Y_TITLE = "Позиция в выдаче"
 X_TITLE = "Время сбора, МСК"
@@ -85,7 +87,7 @@ GLYPH_COLORS: dict[str, str] = {
     "rate_limited": GLYPH_LIGHT,
     "error": GLYPH_LIGHT,
 }
-HEATMAP_FONT = {"size": 14, "family": "Source Sans Pro, Source Sans 3, sans-serif"}
+HEATMAP_FONT = {"size": 14, "family": FONT_FAMILY}
 MISSING_LABEL = "пусто — запрос не выполнялся"
 HEATMAP_CELL_PX = 20
 HEATMAP_FRAME_PX = 96  # top + bottom margin
@@ -174,6 +176,8 @@ def _product_trace(
         for p in d["is_promoted"]
     ]
     colour = SERIES_COLORS[index % len(SERIES_COLORS)]
+    # Hollow end caps: where the line stops next to a gap (left the top-N / came back). Ads win.
+    caps = series.edge_caps([str(state) for state in d["state"]])
     trace = go.Scatter(
         x=d["t_msk"].dt.strftime(TIME_FORMAT).tolist(),
         y=found,
@@ -182,9 +186,15 @@ def _product_trace(
         name=esc(legend_name(name)),
         line={"color": colour, "width": 2, "dash": "dash" if index >= DASH_FROM else "solid"},
         marker={
-            "color": colour,
-            "size": [10 if p else 7 for p in promoted],
+            "color": [
+                "#FFFFFF" if c and not p else colour for c, p in zip(caps, promoted, strict=True)
+            ],
+            "size": [10 if p or c else 7 for c, p in zip(caps, promoted, strict=True)],
             "symbol": ["diamond" if p else "circle" for p in promoted],
+            "line": {
+                "color": colour,
+                "width": [2.5 if c and not p else 0 for c, p in zip(caps, promoted, strict=True)],
+            },
         },
         customdata=[
             [int(nm_id), texts.fmt_price(price), AD_FRAGMENT if p else ""]
@@ -202,8 +212,12 @@ def position_figure(
     names: Mapping[int, str],
     x_range: tuple[pd.Timestamp, pd.Timestamp],
     top_n: int,
+    watermark: str | None = None,
 ) -> go.Figure:
-    """The position chart: one trace per selected product plus two legend-only entries."""
+    """The position chart: one trace per selected product plus two legend-only entries.
+
+    ``watermark`` (demo mode) adds one faint rotated label over the plot area.
+    """
     fig = go.Figure()
     shown: list[int] = []
     for index, nm_id in enumerate(nm_ids):
@@ -256,14 +270,21 @@ def position_figure(
             "entrywidth": LEGEND_ENTRY_PX,
         },
         margin={"l": 64, "r": 16, "t": 16, "b": 88},
-        font={
-            "size": 14,
-            "color": TEXT_COLOR,
-            "family": "Source Sans Pro, Source Sans 3, sans-serif",
-        },
+        font={"size": 14, "color": TEXT_COLOR, "family": FONT_FAMILY},
         paper_bgcolor="#FFFFFF",
         plot_bgcolor="#FFFFFF",
     )
+    if watermark:
+        fig.add_annotation(
+            text=watermark,
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            textangle=-10,
+            font={"size": 88, "color": WATERMARK_COLOR},
+        )
     return fig
 
 

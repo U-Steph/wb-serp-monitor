@@ -188,7 +188,7 @@ def test_x_is_moscow_wall_clock_without_a_zone(mixed):
 
 def test_colours_follow_the_palette_in_selection_order_and_late_series_are_dashed():
     assert len(charts.SERIES_COLORS) == 15
-    assert charts.SERIES_COLORS[0] == "#1F77B4" and charts.SERIES_COLORS[14] == "#862E9C"
+    assert charts.SERIES_COLORS[0] == "#7B10F5" and charts.SERIES_COLORS[14] == "#475569"
     ids = list(range(1000, 1012))
     grid = pd.DataFrame(
         {
@@ -214,6 +214,51 @@ def test_colours_follow_the_palette_in_selection_order_and_late_series_are_dashe
         assert fig.data[i].line.color == charts.SERIES_COLORS[i]
         assert fig.data[i].line.dash == ("dash" if i >= 9 else "solid")
     assert fig.data[0].name == f"ID {ids[0]}"
+
+
+def test_gap_end_caps_are_hollow_circles_and_ads_keep_their_diamond(db_path):
+    """A product that left the top-N is capped on both sides of the gap; unknown is no cap."""
+    built = scenario_mixed(db_path)
+    r1, _r2, r3, _r4, r5, r6 = built.run_ids
+    path, q1 = str(db_path), built.query_ids[Q1]
+    ids = [A, B, C, D, E, F]
+    grid = data.load_run_grid_raw(path, q1, 1, "")
+    obs = data.load_observations_raw(path, q1, tuple(ids), "")
+    points = series.build_points(grid, obs, ids)
+    fig = charts.position_figure(
+        points, ids, series.band_times(grid), NAMES, series.x_range(grid), 200
+    )
+    f = trace_of(fig, F)
+    at_run5 = list(f.x).index(x_of(grid, r5))
+    assert f.marker.color[at_run5] == "#FFFFFF"
+    assert f.marker.line.width[at_run5] == 2.5
+    assert f.marker.line.color == charts.SERIES_COLORS[ids.index(F)]
+    assert f.marker.symbol[at_run5] == "circle"
+    assert f.marker.size[at_run5] == 10
+    # run 3 of F sits between a blocked run (unknown) and a found run: no cap
+    at_run3 = list(f.x).index(x_of(grid, r3))
+    assert f.marker.color[at_run3] == charts.SERIES_COLORS[ids.index(F)]
+    assert f.marker.size[at_run3] == 7
+    # the ad diamond of product A in run 3 is not turned into a cap
+    a = trace_of(fig, A)
+    at = list(a.x).index(x_of(grid, r3))
+    assert a.marker.symbol[at] == "diamond"
+    assert a.marker.line.width[at] == 0
+    assert len(fig.data) == len(ids) + 2  # no extra legend entry for the caps
+
+
+def test_demo_watermark_is_one_faint_annotation(mixed):
+    _, grid, points = mixed
+    plain = figure_of(grid, points)
+    assert not plain.layout.annotations
+    fig = charts.position_figure(
+        points, TOP5, series.band_times(grid), NAMES, series.x_range(grid), 200, watermark="ДЕМО"
+    )
+    (note,) = fig.layout.annotations
+    assert note.text == "ДЕМО"
+    assert (note.xref, note.yref, note.x, note.y) == ("paper", "paper", 0.5, 0.5)
+    assert note.showarrow is False
+    assert note.font.size == 88
 
 
 def test_trace_names_come_from_the_names_mapping(mixed):
@@ -265,7 +310,8 @@ def test_layout_follows_the_contract(mixed):
     assert layout.legend.entrywidth == charts.LEGEND_ENTRY_PX == 250
     assert (layout.margin.l, layout.margin.r, layout.margin.t, layout.margin.b) == (64, 16, 16, 88)
     assert layout.font.size == 14
-    assert layout.font.color == "#1A1D21"
+    assert layout.font.color == "#1F1F29"
+    assert layout.font.family == "Montserrat, sans-serif"
     assert layout.xaxis.title.text == "Время сбора, МСК"
     assert layout.xaxis.tickformat == "%d.%m<br>%H:%M"
     assert layout.yaxis.range[0] > layout.yaxis.range[1]

@@ -175,6 +175,16 @@ def test_old_running_run_does_not_count_as_alive():
     assert series.heartbeat_line(None, NOW, run).startswith("⚪")
 
 
+def test_edge_caps_mark_found_points_next_to_an_absent_one():
+    F, A, U = series.FOUND, series.ABSENT, series.UNKNOWN
+    assert series.edge_caps([F, F, A, F, F]) == [False, True, False, True, False]
+    assert series.edge_caps([A, F, A]) == [False, True, False]
+    assert series.edge_caps([F, U, F]) == [False, False, False]
+    assert series.edge_caps([F, A, U, F]) == [True, False, False, False]
+    assert series.edge_caps([F]) == [False]
+    assert series.edge_caps([]) == []
+
+
 def test_heartbeat_pill_states():
     assert series.heartbeat_pill(None, NOW, None) == ("none", texts.PILL_ABSENT)
     state, text = series.heartbeat_pill(NOW - timedelta(seconds=12), NOW, None)

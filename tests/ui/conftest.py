@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -16,15 +17,27 @@ collect_ignore_glob = [] if WEB_STACK else ["test_*.py"]
 
 @pytest.fixture(autouse=True)
 def _fresh_streamlit_cache():
-    """st.cache_data is process-global: clear it so tests cannot see each other's frames."""
+    """st.cache_data / st.cache_resource are process-global: clear them between tests."""
     if not WEB_STACK:
         yield
         return
     import streamlit as st
 
     st.cache_data.clear()
+    st.cache_resource.clear()
     yield
     st.cache_data.clear()
+    st.cache_resource.clear()
+
+
+@pytest.fixture
+def demo_tmp(tmp_path, monkeypatch):
+    """Point the temp directory at ``tmp_path`` so demo mode builds its database inside the test.
+
+    Not autouse: session-scoped performance databases check the real temp directory.
+    """
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    return tmp_path
 
 
 @pytest.fixture

@@ -335,6 +335,21 @@ def build_points(grid: pd.DataFrame, obs: pd.DataFrame, nm_ids: Sequence[int]) -
     return out.sort_values(["nm_id", "t_msk", "run_id"], ignore_index=True)
 
 
+def edge_caps(states: Sequence[str]) -> list[bool]:
+    """Which points of one product's timeline are line endpoints next to a gap.
+
+    A point is a cap when it is FOUND and a direct neighbour is ABSENT (the product left the top-N
+    or came back). The ends of the sequence have no neighbour on that side, and an UNKNOWN
+    neighbour (a failed run) is not a cap: nothing is known about that hour.
+    """
+    last = len(states) - 1
+    return [
+        state == FOUND
+        and ((i > 0 and states[i - 1] == ABSENT) or (i < last and states[i + 1] == ABSENT))
+        for i, state in enumerate(states)
+    ]
+
+
 def band_times(grid: pd.DataFrame) -> pd.Series:
     """Moscow start times of the runs whose attempt for the query was not complete."""
     g = _prepared(grid)
