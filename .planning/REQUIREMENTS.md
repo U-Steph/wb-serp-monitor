@@ -72,9 +72,9 @@ Sources: TZ (`TZ_Wildberries_short_2026.pdf`), `.planning/PROJECT.md`, `.plannin
 
 ### Deliverables (DOC)
 
-- [ ] **DOC-01**: README in Russian: what it does, architecture diagram, data model, field definitions (price/rating/delivery semantics and assumptions), how to run (Docker and local), configuration, operational notes, limitations (incl. WB anti-bot situation, honestly).
-- [ ] **DOC-02**: Write-up for the employer (Russian): time spent, difficulties and how they were solved, AI tools used (Claude Code + GSD multi-agent workflow), links to repo and live UI.
-- [ ] **DOC-03**: Source archive (zip) of the repository as an alternative to the repo link.
+- [x] **DOC-01**: README in Russian: what it does, architecture diagram, data model, field definitions (price/rating/delivery semantics and assumptions), how to run (Docker and local), configuration, operational notes, limitations (incl. WB anti-bot situation, honestly).
+- [x] **DOC-02**: Write-up for the employer (Russian): time spent, difficulties and how they were solved, AI tools used (Claude Code + GSD multi-agent workflow), links to repo and live UI.
+- [x] **DOC-03**: Source archive (zip) of the repository as an alternative to the repo link.
 
 ## v2 Requirements
 
@@ -147,9 +147,9 @@ Which phases cover which requirements. Updated during roadmap creation (2026-10-
 | OPS-02 | Phase 2 | Complete |
 | OPS-03 | Phase 4 | Complete |
 | OPS-04 | Phase 1 | Complete |
-| DOC-01 | Phase 4 | Pending |
-| DOC-02 | Phase 4 | Pending |
-| DOC-03 | Phase 4 | Pending |
+| DOC-01 | Phase 4 | Complete |
+| DOC-02 | Phase 4 | Complete |
+| DOC-03 | Phase 4 | Complete |
 
 **Coverage:**
 
