@@ -562,7 +562,7 @@ def main() -> None:
                 label_visibility="collapsed",
             )
         with left:
-            pill_box = st.container(horizontal=True, vertical_alignment="center")
+            pill_box = st.container(gap="small")
             with pill_box:
                 st.markdown(f"**{texts.TITLE}**", width="content")
 
