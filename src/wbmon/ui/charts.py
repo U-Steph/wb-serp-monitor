@@ -68,11 +68,11 @@ X_TITLE = "Время сбора, МСК"
 
 # Heatmap: code -> (integer code, fill, glyph). The glyph is the non-colour channel of the status.
 STATUS_STYLE: dict[str, tuple[int, str, str]] = {
-    "ok": (1, "#2B8A3E", "✓"),
-    "partial": (2, "#F2C037", "~"),
-    "blocked": (3, "#C92A2A", "✕"),
-    "rate_limited": (4, "#D9480F", "!"),
-    "error": (5, "#6C757D", "E"),
+    "ok": (1, "#2BBF7E", "✓"),
+    "partial": (2, "#F5B04A", "~"),
+    "blocked": (3, "#EF6B6F", "✕"),
+    "rate_limited": (4, "#F08A24", "!"),
+    "error": (5, "#9A9AA8", "E"),
 }
 MISSING_STYLE: tuple[int, str, str] = (0, "#FFFFFF", "")
 # Glyph colour per status (UI-SPEC status table): white on the dark fills, ink on the amber one.

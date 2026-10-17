@@ -175,6 +175,75 @@ def test_old_running_run_does_not_count_as_alive():
     assert series.heartbeat_line(None, NOW, run).startswith("⚪")
 
 
+def snapshot_rows(n=12, **overrides):
+    frame = pd.DataFrame(
+        {
+            "position": list(range(1, n + 1)),
+            "is_promoted": [0] * n,
+            "nm_id": [900000000 + i for i in range(n)],
+            "name": [f"Товар {i}" for i in range(1, n + 1)],
+            "brand": ["Бренд"] * n,
+            "price_rub": [1000.0 + 100 * i for i in range(1, n + 1)],
+            "price_basic_rub": [None] * n,
+            "rating": [4.0 + 0.1 * i for i in range(1, n + 1)],
+            "feedbacks": [1000 + i for i in range(1, n + 1)],
+            "delivery_days": [1 + i % 3 for i in range(1, n + 1)],
+            "seller_name": ["Продавец"] * n,
+        }
+    )
+    for column, values in overrides.items():
+        frame[column] = values
+    return frame
+
+
+def test_fmt_rating_has_one_decimal_and_a_comma():
+    assert texts.fmt_rating(4.75) in ("4,8", "4,7")  # float rounding: one decimal either way
+    assert texts.fmt_rating(4.0) == "4,0"
+    assert texts.fmt_rating(None) == texts.MISSING
+    assert texts.fmt_rating(float("nan")) == texts.MISSING
+
+
+def test_kpi_tiles_use_the_top_ten_and_ignore_unknown_prices():
+    prices = [1000.0 + 100 * i for i in range(1, 13)]
+    prices[2] = None  # unknown price at position 3 is dropped, not counted as zero
+    tiles = series.kpi_tiles(snapshot_rows(price_rub=prices))
+    assert tiles[texts.KPI_ITEMS] == "12"
+    known = [p for p in prices[:10] if p is not None]
+    assert tiles[texts.KPI_PRICE] == texts.fmt_price(sum(known) / len(known))
+    assert tiles[texts.KPI_RATING] == "4,5"  # mean of 4.1 .. 5.0
+    assert tiles[texts.KPI_DELIVERY] == "1–3 дн."
+
+
+def test_kpi_tiles_with_missing_values_show_dashes():
+    frame = snapshot_rows(3, price_rub=[None] * 3, rating=[None] * 3, delivery_days=[None] * 3)
+    tiles = series.kpi_tiles(frame)
+    assert tiles[texts.KPI_ITEMS] == "3"
+    assert [tiles[k] for k in (texts.KPI_PRICE, texts.KPI_RATING, texts.KPI_DELIVERY)] == [
+        texts.MISSING
+    ] * 3
+    assert series.kpi_tiles(snapshot_rows(2, delivery_days=[2, 2]))[texts.KPI_DELIVERY] == "2 дн."
+
+
+def test_product_cards_are_limited_ordered_and_honest():
+    n = 45
+    frame = snapshot_rows(n).sort_values("position", ascending=False)  # unsorted input
+    frame["price_basic_rub"] = [None if i % 2 else 1e6 for i in range(n)]
+    frame.loc[frame["position"] == 3, "is_promoted"] = 1
+    frame.loc[frame["position"] == 4, "seller_name"] = None
+    cards = series.product_cards(frame)
+    assert len(cards) == 40
+    assert [c["position"] for c in cards[:3]] == ["#1", "#2", "#3"]
+    assert cards[2]["promoted"] is True and cards[0]["promoted"] is False
+    assert cards[3]["seller"] == texts.MISSING
+    assert cards[0]["rating"].startswith("★ 4,1 · ")
+    assert len(series.product_cards(frame, limit=5)) == 5
+    # basic price only when it is higher than the price
+    plain = snapshot_rows(2, price_basic_rub=[900.0, 1e6], price_rub=[1000.0, 1100.0])
+    first, second = series.product_cards(plain)
+    assert first["basic"] is None
+    assert second["basic"] == texts.fmt_price(1e6)
+
+
 def test_edge_caps_mark_found_points_next_to_an_absent_one():
     F, A, U = series.FOUND, series.ABSENT, series.UNKNOWN
     assert series.edge_caps([F, F, A, F, F]) == [False, True, False, True, False]

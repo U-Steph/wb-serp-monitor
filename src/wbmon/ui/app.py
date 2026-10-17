@@ -332,6 +332,13 @@ def render_positions_section(
         if ids:
             with c_csv:
                 render_csv_button(points, selected, query, clock.utc_now(), ns)
+    if latest_run is not None:
+        tiles = series.kpi_tiles(data.load_snapshot(path, ver, latest_run, query_id))
+        with st.container(key="kpis"):
+            for column, (label, value) in zip(
+                st.columns(4, gap="small"), tiles.items(), strict=True
+            ):
+                column.metric(label, value, border=True)
     with st.container(key="card_chart"):
         st.subheader(texts.CHART_TITLE)
         st.plotly_chart(fig, width="stretch", config=charts.CHART_CONFIG)
@@ -341,6 +348,26 @@ def render_positions_section(
         with st.container(key="card_table"):
             render_characteristics(points, selected, options)
         render_history(points)
+
+
+def render_product_cards(snapshot: pd.DataFrame) -> None:
+    """Top-40 product cards, four per row. Marketplace text goes through ``md_literal`` only."""
+    cards = series.product_cards(snapshot)
+    for start in range(0, len(cards), 4):
+        row = cards[start : start + 4]
+        for offset, (column, card) in enumerate(zip(st.columns(4, gap="small"), row, strict=False)):
+            i = start + offset
+            with column.container(key=f"pcard_{i}"):
+                with st.container(key=f"pimg_{i}", horizontal=True, vertical_alignment="center"):
+                    st.markdown(f"**{card['position']}**", width="content")
+                    if card["promoted"]:
+                        st.badge(texts.AD_BADGE, color="violet")
+                price = f"**{card['price']}**"
+                if card["basic"]:
+                    price += f" ~~{card['basic']}~~"
+                st.markdown(price)
+                st.caption(texts.md_literal(card["name"]))
+                st.caption(f"{card['rating']} · {texts.md_literal(card['seller'])}")
 
 
 def render_snapshot_section(
@@ -404,14 +431,16 @@ def render_snapshot_section(
     with st.container(key="card_snapshot"):
         st.subheader(texts.SNAPSHOT_TITLE)
         st.caption(query_caption)
-        st.dataframe(
-            series.snapshot_frame(snapshot),
-            hide_index=True,
-            width="stretch",
-            height=640,
-            placeholder="—",
-            column_config=_table_config(),
-        )
+        render_product_cards(snapshot)
+        with st.expander(texts.SNAPSHOT_TABLE_EXPANDER):
+            st.dataframe(
+                series.snapshot_frame(snapshot),
+                hide_index=True,
+                width="stretch",
+                height=640,
+                placeholder="—",
+                column_config=_table_config(),
+            )
 
 
 def render_heatmap_block(path: str, ver: data.DataVersion) -> None:

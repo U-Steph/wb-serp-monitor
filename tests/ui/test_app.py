@@ -503,6 +503,21 @@ def test_positions_tab_draws_the_honest_chart_of_the_default_top_five(db_path):
     assert not at.info
 
 
+def test_positions_show_four_kpi_tiles_of_the_latest_run(db_path):
+    scenario_mixed(db_path)
+    at = run_app()
+    assert not at.exception
+    tiles = {m.label: m.value for m in at.metric}
+    assert list(tiles) == [
+        "Товаров в выдаче",
+        "Средняя цена, топ-10",
+        "Средний рейтинг, топ-10",
+        "Доставка в Москву",
+    ]
+    assert tiles["Товаров в выдаче"] == "5"
+    assert tiles["Доставка в Москву"] == "2 дн."
+
+
 def test_changing_the_query_resets_the_selection_to_its_top(db_path):
     built = scenario_mixed(db_path)
     at = run_app()
@@ -796,6 +811,26 @@ def test_snapshot_shows_four_metrics_and_the_full_top_in_order(db_path):
     assert list(frame["Позиция"]) == [1, 2, 3, 4, 5]
     assert list(frame["Реклама"]) == ["", "", "", "", "✓"]
     assert "Выдача по запросу" in [h.value for h in at.subheader]
+
+
+def test_snapshot_shows_product_cards_and_keeps_the_table_in_an_expander(db_path):
+    scenario_mixed(db_path)
+    at = run_app(texts.TAB_SNAPSHOT)
+    assert not at.exception
+    markdown = markdown_values(at)
+    assert "**#1**" in markdown and "**#5**" in markdown
+    assert not has(markdown, "#6")
+    assert "Вся выдача таблицей" in [e.label for e in at.expander]
+    ads = [v for v in badge_values(at) if "Реклама" in v]
+    assert len(ads) == 1  # only product E is an ad slot in the newest mixed run
+
+
+def test_hostile_names_reach_the_cards_only_escaped(db_path):
+    name = hostile_db(db_path)
+    at = run_app(texts.TAB_SNAPSHOT)
+    assert not at.exception
+    assert texts.md_literal(name) in caption_values(at)
+    assert not has(markdown_values(at) + caption_values(at), "http://e.x)")
 
 
 def test_choosing_a_partial_run_shows_its_two_rows_and_status(db_path):

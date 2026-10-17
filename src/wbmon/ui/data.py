@@ -167,8 +167,8 @@ ORDER BY r.started_at DESC, r.id DESC
 LIMIT ?
 """
 SNAPSHOT_SQL = """
-SELECT position, is_promoted, nm_id, name, brand, price_rub, rating, feedbacks, delivery_days,
-       seller_name
+SELECT position, is_promoted, nm_id, name, brand, price_rub, price_basic_rub, rating, feedbacks,
+       delivery_days, seller_name
 FROM observations
 WHERE run_id = ? AND query_id = ?
 ORDER BY position

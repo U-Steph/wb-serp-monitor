@@ -725,6 +725,7 @@ SNAPSHOT_COLUMNS = [
     "name",
     "brand",
     "price_rub",
+    "price_basic_rub",
     "rating",
     "feedbacks",
     "delivery_days",

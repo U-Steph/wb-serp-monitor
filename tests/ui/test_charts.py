@@ -490,11 +490,11 @@ def test_heatmap_colorscale_is_stepped_and_matches_the_status_table():
     assert len(scale) == 12
     assert [c for _, c in scale[::2]] == [
         "#FFFFFF",
-        "#2B8A3E",
-        "#F2C037",
-        "#C92A2A",
-        "#D9480F",
-        "#6C757D",
+        "#2BBF7E",
+        "#F5B04A",
+        "#EF6B6F",
+        "#F08A24",
+        "#9A9AA8",
     ]
     for i in range(6):
         assert scale[2 * i][0] == pytest.approx(i / 6)

@@ -62,6 +62,12 @@ EMPTY_SNAPSHOT_TEXT = (
     "Здесь будет весь топ-{top_n} на момент выбранного сбора: позиция, цена, рейтинг, "
     "продавец и реклама."
 )
+KPI_ITEMS = "Товаров в выдаче"
+KPI_PRICE = "Средняя цена, топ-10"
+KPI_RATING = "Средний рейтинг, топ-10"
+KPI_DELIVERY = "Доставка в Москву"
+AD_BADGE = "Реклама"
+SNAPSHOT_TABLE_EXPANDER = "Вся выдача таблицей"
 CHIP_RUNS = "{n} {noun}"
 CHIP_BLOCKED = "{blocked} из {n} заблокировано"
 CHIP_LAST = "последний — {when} МСК"
@@ -334,6 +340,13 @@ def fmt_price(value: object) -> str:
     if _missing(value):
         return MISSING
     return fmt_int(round(value)) + " ₽"  # type: ignore[call-overload]
+
+
+def fmt_rating(value: object) -> str:
+    """Rating with one decimal and a comma (``4,8``); unknown is the dash."""
+    if _missing(value):
+        return MISSING
+    return f"{float(value):.1f}".replace(".", ",")  # type: ignore[arg-type]
 
 
 def fmt_dt(dt: datetime) -> str:

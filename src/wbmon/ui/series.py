@@ -740,6 +740,54 @@ def snapshot_metrics(snapshot: pd.DataFrame, status: str) -> dict[str, str]:
     }
 
 
+TOP_TEN = 10
+CARD_LIMIT = 40
+
+
+def kpi_tiles(snapshot: pd.DataFrame) -> dict[str, str]:
+    """The four KPI tiles of one stored top-N: size, top-10 averages and the delivery range."""
+    top = snapshot[pd.to_numeric(snapshot["position"], errors="coerce") <= TOP_TEN]
+    prices = pd.to_numeric(top["price_rub"], errors="coerce").dropna()
+    ratings = pd.to_numeric(top["rating"], errors="coerce").dropna()
+    days = pd.to_numeric(snapshot["delivery_days"], errors="coerce").dropna()
+    if days.empty:
+        delivery = texts.MISSING
+    else:
+        low, high = int(days.min()), int(days.max())
+        delivery = f"{low} дн." if low == high else f"{low}–{high} дн."
+    return {
+        texts.KPI_ITEMS: texts.fmt_int(len(snapshot)),
+        texts.KPI_PRICE: texts.MISSING if prices.empty else texts.fmt_price(prices.mean()),
+        texts.KPI_RATING: texts.MISSING if ratings.empty else texts.fmt_rating(ratings.mean()),
+        texts.KPI_DELIVERY: delivery,
+    }
+
+
+def product_cards(snapshot: pd.DataFrame, limit: int = CARD_LIMIT) -> list[dict]:
+    """The first ``limit`` products of a stored top-N as plain card data, in position order.
+
+    Text fields are the raw marketplace text (or the dash): the caller must escape them.
+    """
+    ordered = snapshot.sort_values("position", kind="stable", ignore_index=True).head(limit)
+    cards: list[dict] = []
+    for row in ordered.itertuples(index=False):
+        price, basic = row.price_rub, getattr(row, "price_basic_rub", None)
+        higher = not pd.isna(price) and not pd.isna(basic) and float(basic) > float(price)
+        feedbacks = texts.MISSING if pd.isna(row.feedbacks) else texts.fmt_int(row.feedbacks)
+        cards.append(
+            {
+                "position": f"#{int(row.position)}",
+                "price": texts.fmt_price(price),
+                "basic": texts.fmt_price(basic) if higher else None,
+                "name": _text_or_dash(row.name),
+                "seller": _text_or_dash(row.seller_name),
+                "rating": f"★ {texts.fmt_rating(row.rating)} · {feedbacks}",
+                "promoted": bool(not pd.isna(row.is_promoted) and int(row.is_promoted) == 1),
+            }
+        )
+    return cards
+
+
 def attempts_frame(attempts: pd.DataFrame) -> pd.DataFrame:
     """The recent attempts of one query for display (newest first as loaded)."""
     if attempts.empty:
