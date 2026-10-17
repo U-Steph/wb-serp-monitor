@@ -119,6 +119,10 @@ h1 { letter-spacing: -.02em; }
   white-space: nowrap;
 }
 [class*="st-key-pill_"] [data-testid="stMarkdownContainer"] { margin: 0 !important; }
+[class*="st-key-pill_"] { max-width: 100%; }
+@media (max-width: 1200px) {
+  [class*="st-key-pill_"] p { white-space: normal; }
+}
 [class*="st-key-pill_"]::before {
   content: ""; width: 8px; height: 8px; border-radius: 50%; flex: none;
 }
