@@ -552,7 +552,7 @@ def main() -> None:
     )
 
     with st.container(key="topbar"):
-        left, right = st.columns([3, 1.3], vertical_alignment="center")
+        left, right = st.columns([1, 1], vertical_alignment="center")
         with right, st.container(horizontal=True, horizontal_alignment="right"):
             mode = st.segmented_control(
                 texts.MODE_LABEL,
