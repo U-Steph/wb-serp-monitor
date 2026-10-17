@@ -116,6 +116,7 @@ h1 { letter-spacing: -.02em; }
 }
 [class*="st-key-pill_"] p {
   margin: 0; line-height: 1.25; font-size: 12.5px; font-weight: 600; color: var(--muted);
+  white-space: nowrap;
 }
 [class*="st-key-pill_"] [data-testid="stMarkdownContainer"] { margin: 0 !important; }
 [class*="st-key-pill_"]::before {
