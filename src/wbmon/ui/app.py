@@ -68,6 +68,19 @@ def render_pill(settings: Settings, latest: Mapping | None, demo_on: bool = Fals
         st.markdown(text)
 
 
+@st.fragment(run_every=60)
+def render_live_pill(settings: Settings, path: str, demo_on: bool) -> None:
+    """The status pill, re-rendered every minute so «следующий сбор» stays current."""
+    latest = None
+    if not demo_on:
+        try:
+            log = data.load_run_log(path, data.data_version(path))
+            latest = None if log.empty else log.iloc[0].to_dict()
+        except data.READ_ERRORS:
+            logger.exception("status pill: database read failed")
+    _guarded(render_pill, settings, latest, demo_on)
+
+
 def render_header(
     section: str,
     overview: Mapping,
@@ -608,7 +621,7 @@ def main() -> None:
         st.stop()
 
     with pill_box:
-        _guarded(render_pill, settings, latest, demo_on)
+        render_live_pill(settings, path, demo_on)
     top_n = int(overview["top_n_latest"] or settings.top_n)
     _guarded(render_header, section, overview, latest, blocked_http, settings, demo_on)
     if section == texts.TAB_POSITIONS:

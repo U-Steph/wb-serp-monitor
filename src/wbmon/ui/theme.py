@@ -42,7 +42,17 @@ STYLE = """<style>
   display: none !important;
 }
 header[data-testid="stHeader"] { background: transparent; box-shadow: none; pointer-events: none; }
-[data-testid="stExpandSidebarButton"] { pointer-events: auto; }
+[data-testid="stExpandSidebarButton"] {
+  pointer-events: auto; display: inline-flex; align-items: center; gap: 6px;
+  width: auto !important; height: auto !important; padding: 7px 14px 7px 10px !important;
+  border-radius: 999px; background: linear-gradient(180deg, #fff, #F7F7FA);
+  box-shadow: 0 0 0 1px rgba(31,31,41,.06), 0 10px 22px -12px rgba(31,31,41,.45),
+    0 2px 6px rgba(31,31,41,.08);
+  color: var(--primary-dark);
+}
+[data-testid="stExpandSidebarButton"]::after {
+  content: "Разделы"; font-size: 13px; font-weight: 700; color: var(--primary-dark);
+}
 
 [data-testid="stMainBlockContainer"] { padding-top: 1.25rem; max-width: 1300px; }
 [data-testid="stSidebar"] { background: #fff; border-right: 1px solid var(--line); }
@@ -101,10 +111,13 @@ h1 { letter-spacing: -.02em; }
 .st-key-topbar strong { font-size: 16px; font-weight: 800; }
 [class*="st-key-pill_"] {
   display: inline-flex; flex-direction: row; align-items: center; gap: 8px;
-  padding: 7px 12px; border-radius: 999px; background: var(--surface);
+  padding: 7px 14px; border-radius: 999px; background: var(--surface); min-height: 32px;
   border: 1px solid var(--line);
 }
-[class*="st-key-pill_"] p { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+[class*="st-key-pill_"] p {
+  margin: 0; line-height: 1.25; font-size: 12.5px; font-weight: 600; color: var(--muted);
+}
+[class*="st-key-pill_"] [data-testid="stMarkdownContainer"] { margin: 0 !important; }
 [class*="st-key-pill_"]::before {
   content: ""; width: 8px; height: 8px; border-radius: 50%; flex: none;
 }
