@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import math
 import os
 import tempfile
 from collections.abc import Sequence
@@ -145,10 +146,19 @@ def _row(position: int, p: int, qi: int, k: int, at: str) -> ObservationRow:
 
 
 def _order(qi: int, k: int) -> list[int]:
-    """Pool indices in position order: stable leaders and a fringe that moves between runs."""
+    """Pool indices in position order: smooth drifts, so a product moves a few places per hour.
 
-    def score(p: int) -> int:
-        return p * 10 + ((p * 37 + k * 53 + qi * 11) % 301) - 150
+    Each product has a base place (10 points apart), a slow trend over the two days, a gentle
+    wave and a little jitter. Products near place 30 drift in and out of the top-30, which is
+    what produces the honest gaps on the chart.
+    """
+
+    def score(p: int) -> float:
+        amp = 12 + (p * 13 + qi * 7) % 24
+        trend = ((p + qi) % 5 - 2) * 0.5 * k
+        wave = amp * math.sin((k + p * 1.7 + qi) / 5)
+        jitter = (p * 37 + k * 53 + qi * 11) % 5 - 2
+        return p * 10 + trend + wave + jitter
 
     return sorted(range(POOL), key=score)
 
