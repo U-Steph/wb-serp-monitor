@@ -500,6 +500,25 @@ def test_readme_links_the_repository_and_the_live_ui_line():
     assert any(line.startswith("**Работающий интерфейс:**") for line in text.splitlines())
 
 
+def test_no_deployment_marker_left():
+    marker = re.compile(r"будет добавлен[аоы]? после развёртывания")
+    for path in (README, SUBMISSION):
+        assert marker.search(_read(path)) is None, f"{path.name} still has a deployment placeholder"
+
+
+def test_readme_and_submission_link_the_live_ui():
+    for path in (README, SUBMISSION):
+        lines = [
+            line
+            for line in _read(path).splitlines()
+            if line.startswith("**Работающий интерфейс:**")
+        ]
+        assert lines, f"{path.name} has no «Работающий интерфейс» line"
+        match = re.search(r"https?://([^/\s]+)", lines[0])
+        assert match, f"{path.name}: the «Работающий интерфейс» line has no URL"
+        assert match.group(1) != "github.com", f"{path.name}: the live UI link points to GitHub"
+
+
 def test_readme_has_no_secrets_or_personal_emails():
     _assert_no_secrets("README.md", _read(README))
 
