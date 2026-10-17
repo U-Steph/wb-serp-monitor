@@ -37,7 +37,8 @@ STYLE = """<style>
 }
 
 /* browser chrome of Streamlit that a product page does not need */
-[data-testid="stToolbar"], [data-testid="stMainMenu"], [data-testid="stAppDeployButton"], footer {
+[data-testid="stToolbarActions"], [data-testid="stMainMenu"],
+[data-testid="stAppDeployButton"], footer {
   display: none !important;
 }
 header[data-testid="stHeader"] { background: transparent; box-shadow: none; pointer-events: none; }

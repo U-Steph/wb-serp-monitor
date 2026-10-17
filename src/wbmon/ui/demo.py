@@ -19,7 +19,9 @@ import contextlib
 import json
 import math
 import os
+import stat
 import tempfile
+import time
 from collections.abc import Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -226,12 +228,38 @@ def build_demo_db(path: str | Path, now: datetime) -> None:
             writer.finish_run(run_id, iso_z(min(started + timedelta(minutes=4), now)))
 
 
+def _check_private(folder: Path) -> None:
+    """Refuse a demo directory that another user could have prepared or can write into."""
+    if not hasattr(os, "getuid"):
+        return
+    info = os.lstat(folder)
+    if stat.S_ISLNK(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+        raise ValueError("the demo directory must be private to this user")
+
+
+def _remove_old_builds(folder: Path, keep: Path, max_age_s: int = 2 * 3600) -> None:
+    """Best effort: delete demo builds (and their -wal/-shm) older than ``max_age_s``."""
+    cutoff = time.time() - max_age_s
+    for item in folder.glob("demo*.sqlite3*"):
+        if item.name.startswith(keep.name):
+            continue
+        with contextlib.suppress(OSError):
+            if item.stat().st_mtime < cutoff:
+                item.unlink()
+
+
 def ensure_demo_db(real_db_path: str | Path, now: datetime | None = None) -> Path:
-    """Build a fresh demo database in the private temp directory and return its path."""
-    path = check_demo_path(demo_db_path(), real_db_path)
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    path = check_demo_path(demo_db_path(), real_db_path)  # the directory exists now: re-check
-    for suffix in ("", "-wal", "-shm"):
-        Path(f"{path}{suffix}").unlink(missing_ok=True)
+    """Build a fresh demo database under a new unique name in the private temp directory.
+
+    Each build gets its own file, so a session still reading an earlier build is never
+    disturbed and concurrent builds cannot collide; builds older than two hours are removed.
+    """
+    folder = check_demo_path(demo_db_path(), real_db_path).parent
+    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+    _check_private(folder)
+    handle, name = tempfile.mkstemp(prefix="demo-", suffix=".sqlite3", dir=folder)
+    os.close(handle)
+    path = check_demo_path(name, real_db_path)
     build_demo_db(path, now or utc_now())
+    _remove_old_builds(folder, keep=path)
     return path

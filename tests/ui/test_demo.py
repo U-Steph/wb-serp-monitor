@@ -121,8 +121,9 @@ def test_ensure_demo_db_is_rebuilt_from_scratch(demo_tmp):
     real = demo_tmp / "real.sqlite3"
     first = demo.ensure_demo_db(real, utc_now())
     second = demo.ensure_demo_db(real, utc_now())
-    assert first == second
-    assert table_counts(second)[0] == 48
+    assert first != second  # every build gets its own file: readers of the first are undisturbed
+    assert first.parent == second.parent == demo.demo_db_path().parent.resolve()
+    assert table_counts(first)[0] == table_counts(second)[0] == 48
 
 
 # --------------------------------------------------------------------------------- the app
@@ -142,8 +143,8 @@ def test_demo_mode_never_touches_the_real_database(db_path, demo_tmp):
         before_stat.st_mtime_ns,
     )
     assert table_counts(db_path) == before
-    assert demo.demo_db_path() != db_path
-    assert demo.demo_db_path().is_file()
+    builds = list(demo.demo_db_path().parent.glob("demo-*.sqlite3"))
+    assert builds and all(b.resolve() != db_path.resolve() for b in builds)
 
 
 def test_demo_positions_show_all_four_labels(db_path, demo_tmp):
@@ -213,3 +214,26 @@ def test_a_failed_demo_build_shows_the_fixed_copy_and_keeps_the_page(
     assert not at.exception
     assert [e.value for e in at.error] == [texts.DEMO_ERROR]
     assert not any("secret" in v for v in markdown_values(at))
+
+
+def test_style_keeps_the_sidebar_expand_button_reachable():
+    """The expand-sidebar button lives inside stToolbar: hiding stToolbar or stHeader would lock
+    the user out of the section menu once the sidebar is collapsed."""
+    import re
+
+    from wbmon.ui import theme
+
+    for selectors in re.findall(r"([^{}]+)\{[^}]*display\s*:\s*none", theme.STYLE):
+        assert '"stToolbar"' not in selectors
+        assert '"stHeader"' not in selectors
+
+
+def test_demo_directory_must_be_private(demo_tmp):
+    folder = demo.demo_db_path().parent
+    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+    folder.chmod(0o777)
+    try:
+        with pytest.raises(ValueError):
+            demo.ensure_demo_db(demo_tmp / "real.sqlite3")
+    finally:
+        folder.chmod(0o700)

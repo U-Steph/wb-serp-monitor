@@ -37,10 +37,17 @@ def _guarded(render: Callable[..., None], *args: object) -> None:
         st.error(texts.ERROR_BLOCK)
 
 
-@st.cache_resource(show_spinner=texts.DEMO_SPINNER)
-def _demo_db(real_db_path: str) -> str:
-    """Build the synthetic demo database once per web process; returns its (temp) path."""
+@st.cache_resource(show_spinner=texts.DEMO_SPINNER, max_entries=2)
+def _demo_db(real_db_path: str, hour: str) -> str:
+    """Build the synthetic demo database once per hour (``hour`` is the cache key).
+
+    Returns the path of the new build.
+    """
     return str(demo.ensure_demo_db(real_db_path))
+
+
+def _demo_hour() -> str:
+    return clock.iso_z(clock.floor_hour(clock.utc_now()))
 
 
 def _set_mode(value: str) -> None:
@@ -557,10 +564,11 @@ def main() -> None:
     path = str(settings.db_path)
     if demo_on:
         try:
-            path = _demo_db(path)
+            hour = _demo_hour()
+            path = _demo_db(path, hour)
             if not Path(path).is_file():  # the temp file was cleaned up behind the cache
                 _demo_db.clear()
-                path = _demo_db(str(settings.db_path))
+                path = _demo_db(str(settings.db_path), hour)
         except (ValueError, OSError, *data.READ_ERRORS):
             logger.exception("demo database failed")
             with pill_box:
@@ -610,7 +618,10 @@ def main() -> None:
     elif section == texts.TAB_RUNLOG:
         _guarded(render_runlog_section, path, ver, overview, run_log, latest)
     else:
-        _guarded(render_about_section, series.sheet_size(overview), top_n)
+        if demo_on:  # describe the real service, not the synthetic database
+            _guarded(render_about_section, texts.DEFAULT_N_QUERIES, settings.top_n)
+        else:
+            _guarded(render_about_section, series.sheet_size(overview), top_n)
 
 
 main()
