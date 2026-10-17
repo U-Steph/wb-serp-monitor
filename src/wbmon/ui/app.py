@@ -76,7 +76,9 @@ def render_header(
         texts.subtitle(series.sheet_size(overview), overview["top_n_latest"] or settings.top_n)
     )
     if demo_on:
-        with st.container(key="demo_card", horizontal=True, vertical_alignment="center"):
+        with st.container(
+            key="demo_card", horizontal=True, vertical_alignment="center", wrap=False
+        ):
             st.markdown(texts.DEMO_CARD)
             st.button(texts.DEMO_OFF, key="demo_off", on_click=_set_mode, args=(texts.MODE_REAL,))
         return
@@ -252,7 +254,7 @@ def render_positions_section(
         render_empty_state("positions", overview, latest, top_n)
         return
     with st.container(key="filters"):
-        c_query, c_period, c_topn, c_csv = st.columns([4, 3, 2, 1.5], vertical_alignment="bottom")
+        c_query, c_period, c_topn, c_csv = st.columns([4, 3, 2, 2], vertical_alignment="bottom")
         with c_query:
             query = render_query_select(queries, ns)
         with c_period:
